@@ -22,11 +22,11 @@ function getEnv(name: string): string {
 const PORT = process.env.PORT || 3000;
 
 // 🌱 Variables de entorno necesarias
-const MONGODB_URI = getEnv('MONGODB_URI');
-const FATSECRET_CONSUMER_KEY = getEnv('FATSECRET_CONSUMER_KEY');
-const FATSECRET_CONSUMER_SECRET = getEnv('FATSECRET_CONSUMER_SECRET');
-const NUTRITIONIX_APP_ID = getEnv('NUTRITIONIX_APP_ID');
-const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
+const MONGODB_URI = getEnv('MONGODB_URI') || "mongodb+srv://oscarblaugrana:dcBVGQu9dgoWjt9K@fitbalance.4vcdip8.mongodb.net/fitbalance";
+const FATSECRET_CONSUMER_KEY = getEnv('FATSECRET_CONSUMER_KEY') || "e0ef09f06dcb4f04bc16a41dfeb7e971";
+const FATSECRET_CONSUMER_SECRET = getEnv('FATSECRET_CONSUMER_SECRET') || "040d3b31c2704f07a156a5bdcf2f059f";
+const NUTRITIONIX_APP_ID = getEnv('NUTRITIONIX_APP_ID') || "9cb9997e";
+const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY') || "f20dd733aa2b7930250a27e9c8e5e167";
 
 // Configuración de OAuth para FatSecret
 const fatSecretOAuth = new OAuth({
