@@ -105,26 +105,53 @@ mongoose.connect(MONGODB_URI)
     process.exit(1);
   });
 
+//obtener token por cada hora
+  async function getFatSecretToken(): Promise<string> {
+  const clientId = FATSECRET_CONSUMER_KEY;
+  const clientSecret = FATSECRET_CONSUMER_SECRET;
+
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  const response = await axios.post(
+    'https://oauth.fatsecret.com/connect/token',
+    new URLSearchParams({
+      grant_type: 'client_credentials',
+      scope: 'basic'
+    }),
+    {
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    }
+  );
+
+  return response.data.access_token;
+}
+
 // 🔎 Función para buscar en FatSecret
 async function searchFatSecretByText(query: string) {
-  const url = 'https://platform.fatsecret.com/rest/server.api';
-  const method = 'POST';
-  const data = {
-    method: 'foods.search',
-    search_expression: query,
-    format: 'json',
-    max_results: '10'
-  };
+  const accessToken = await getFatSecretToken(); // 🪙
 
-  const requestData = { url, method, data };
-  const headers = {
-    ...fatSecretOAuth.toHeader(fatSecretOAuth.authorize(requestData)),
-    'Content-Type': 'application/x-www-form-urlencoded'
-  };
+  const response = await axios.post(
+    'https://platform.fatsecret.com/rest/server.api',
+    new URLSearchParams({
+      method: 'foods.search',
+      search_expression: query,
+      format: 'json',
+      max_results: '10'
+    }),
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    }
+  );
 
-  const response = await axios.post(url, new URLSearchParams(data), { headers });
   return response.data;
 }
+
 
 // 🧠 Ruta combinada de búsqueda nutricional
 app.post('/search-food', async (req: Request, res: Response) => {
