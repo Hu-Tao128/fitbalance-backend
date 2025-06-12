@@ -1,10 +1,8 @@
 import axios from "axios";
 import cors from 'cors';
-import crypto from 'crypto';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import OAuth from 'oauth-1.0a';
 
 dotenv.config();
 
@@ -22,23 +20,11 @@ function getEnv(name: string): string {
 const PORT = process.env.PORT || 3000;
 
 // 🌱 Variables de entorno necesarias
-const MONGODB_URI = getEnv('MONGODB_URI') || "mongodb+srv://oscarblaugrana:dcBVGQu9dgoWjt9K@fitbalance.4vcdip8.mongodb.net/fitbalance";
-const FATSECRET_CONSUMER_KEY = getEnv('FATSECRET_CONSUMER_KEY') || "e0ef09f06dcb4f04bc16a41dfeb7e971";
-const FATSECRET_CONSUMER_SECRET = getEnv('FATSECRET_CONSUMER_SECRET') || "040d3b31c2704f07a156a5bdcf2f059f";
-const NUTRITIONIX_APP_ID = getEnv('NUTRITIONIX_APP_ID') || "9cb9997e";
-const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY') || "f20dd733aa2b7930250a27e9c8e5e167";
-
-// Configuración de OAuth para FatSecret
-const fatSecretOAuth = new OAuth({
-  consumer: {
-    key: FATSECRET_CONSUMER_KEY,
-    secret: FATSECRET_CONSUMER_SECRET
-  },
-  signature_method: 'HMAC-SHA1',
-  hash_function: (baseString: string, key: string) => {
-    return crypto.createHmac('sha1', key).update(baseString).digest('base64');
-  }
-});
+const MONGODB_URI = getEnv('MONGODB_URI');
+const FATSECRET_CONSUMER_KEY = getEnv('FATSECRET_CONSUMER_KEY');
+const FATSECRET_CONSUMER_SECRET = getEnv('FATSECRET_CONSUMER_SECRET');
+const NUTRITIONIX_APP_ID = getEnv('NUTRITIONIX_APP_ID');
+const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
 
 // 📦 Modelos de Mongoose
 interface IPatient {
@@ -105,8 +91,11 @@ mongoose.connect(MONGODB_URI)
     process.exit(1);
   });
 
-//obtener token por cada hora
-  async function getFatSecretToken(): Promise<string> {
+// 🧠 Token de FatSecret (con cache)
+let fatSecretAccessToken: string | null = null;
+let fatSecretTokenExpiry = 0;
+
+async function getFatSecretToken(): Promise<string> {
   const clientId = FATSECRET_CONSUMER_KEY;
   const clientSecret = FATSECRET_CONSUMER_SECRET;
 
@@ -126,12 +115,16 @@ mongoose.connect(MONGODB_URI)
     }
   );
 
-  return response.data.access_token;
+  const token = response.data.access_token;
+
+  if (!token) throw new Error('❌ No se pudo obtener el token de FatSecret');
+
+  return token;
 }
 
 // 🔎 Función para buscar en FatSecret
 async function searchFatSecretByText(query: string) {
-  const accessToken = await getFatSecretToken(); // 🪙
+  const accessToken = await getFatSecretToken();
 
   const response = await axios.post(
     'https://platform.fatsecret.com/rest/server.api',
@@ -151,7 +144,6 @@ async function searchFatSecretByText(query: string) {
 
   return response.data;
 }
-
 
 // 🧠 Ruta combinada de búsqueda nutricional
 app.post('/search-food', async (req: Request, res: Response) => {
