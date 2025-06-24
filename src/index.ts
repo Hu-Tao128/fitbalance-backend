@@ -2,7 +2,7 @@ import axios from "axios";
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
-import mongoose from 'mongoose';
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
 dotenv.config();
 
@@ -28,32 +28,47 @@ const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
 
 // 📦 Modelos de Mongoose
 interface IPatient {
-  nombre: string;
-  correo: string;
-  email: string;
-  usuario: string;
+  _id: string;
+  username: string;
   password: string;
-  edad?: number;
-  sexo?: string;
-  altura_cm?: number;
-  peso_kg?: number;
-  objetivo?: string;
-  ultima_consulta?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  age?: number;
+  gender?: string;
+  height_cm?: number;
+  weight_kg?: number;
+  objective?: string;
+  allergies?: string[];
+  dietary_restrictions?: string[];
+  registration_date?: Date;
+  notes?: string;
+  last_consultation?: Date | null;
+  nutritionist_id?: string;
+  isActive?: boolean;
 }
 
 const Patient = mongoose.model<IPatient>(
   'Patient',
   new mongoose.Schema({
-    nombre: { type: String, required: true },
-    correo: { type: String, required: true },
-    usuario: { type: String, required: true, unique: true },
+    _id: { type: String, required: true },
+    username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    edad: { type: Number },
-    sexo: { type: String },
-    altura_cm: { type: Number },
-    peso_kg: { type: Number },
-    objetivo: { type: String },
-    ultima_consulta: { type: String }
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    phone: { type: String },
+    age: { type: Number },
+    gender: { type: String, enum: ['male', 'female', 'other'] },
+    height_cm: { type: Number },
+    weight_kg: { type: Number },
+    objective: { type: String },
+    allergies: { type: [String], default: [] },
+    dietary_restrictions: { type: [String], default: [] },
+    registration_date: { type: Date, default: Date.now },
+    notes: { type: String, default: '' },
+    last_consultation: { type: Date, default: null },
+    nutritionist_id: { type: String },
+    isActive: { type: Boolean, default: true }
   }, { collection: 'Patients' })
 );
 
@@ -82,6 +97,64 @@ const Food = mongoose.model<IFood>(
   'Food',
   new mongoose.Schema({}, { strict: false, collection: 'Food' })
 );
+
+interface IWeeklyPlanFood {
+  food_id: string;
+  grams: number;
+}
+
+const FoodSchema = new Schema<IWeeklyPlanFood>({
+  food_id: { type: String, required: true },
+  grams: { type: Number, required: true, min: 1 },
+}, { _id: false });
+
+interface IWeeklyMeal {
+  day: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+  type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  time: string;
+  foods: IWeeklyPlanFood[];
+}
+
+const MealSchema = new Schema<IWeeklyMeal>({
+  day: {
+    type: String,
+    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    required: true,
+  },
+  type: {
+    type: String,
+    enum: ['breakfast', 'lunch', 'dinner', 'snack'],
+    required: true,
+  },
+  time: { type: String, required: true },
+  foods: { type: [FoodSchema], required: true },
+}, { _id: false });
+
+export interface IWeeklyPlan extends Document {
+  patient_id: Types.ObjectId;
+  week_start: Date;
+  dailyCalories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+  meals: IWeeklyMeal[];
+}
+
+const WeeklyPlanSchema = new Schema<IWeeklyPlan>({
+  patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
+  week_start: { type: Date, required: true },
+  dailyCalories: { type: Number, required: true },
+  protein: { type: Number, required: true },
+  fat: { type: Number, required: true },
+  carbs: { type: Number, required: true },
+  meals: { type: [MealSchema], required: true },
+}, {
+  collection: 'WeeklyPlan',
+  timestamps: true
+});
+
+const WeeklyPlan = mongoose.model<IWeeklyPlan>('WeeklyPlan', WeeklyPlanSchema);
+
 
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
@@ -192,65 +265,45 @@ app.post('/search-food', async (req: Request, res: Response) => {
   }
 });
 
-// 🧾 Rutas de usuarios
-app.get('/usuarios', async (_req, res) => {
-  try {
-    const usuarios = await Patient.find();
-    res.json(usuarios);
-  } catch (err) {
-    res.status(500).json({ error: 'Error al obtener usuarios' });
-  }
-});
-
-app.post('/usuarios', async (req, res) => {
-  try {
-    const nuevoUsuario = new Patient(req.body);
-    await nuevoUsuario.save();
-    res.status(201).json(nuevoUsuario);
-  } catch (err) {
-    res.status(500).json({ error: 'Error al guardar usuario' });
-  }
-});
-
 app.post('/login', async (req, res) => {
-  const { usuario, password } = req.body;
+  const { username, password } = req.body;
 
-  if (!usuario || !password) {
-    return res.status(400).json({ mensaje: 'Faltan campos: usuario y/o contraseña' });
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Missing fields: username and/or password' });
   }
 
   try {
-    const paciente = await Patient.findOne({ usuario, password }).select('-password');
+    const patient = await Patient.findOne({ username, password }).select('-password');
 
-    if (!paciente) {
-      return res.status(401).json({ mensaje: 'Credenciales incorrectas' });
+    if (!patient) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     res.json({
-      mensaje: 'Inicio de sesión exitoso',
-      id: paciente._id,
-      usuario: paciente.usuario,
-      nombre: paciente.nombre,
-      correo: paciente.correo || paciente.email
+      message: 'Login successful',
+      id: patient._id,
+      username: patient.username,
+      name: patient.name,
+      email: patient.email
     });
   } catch (err) {
-    res.status(500).json({ error: 'Error del servidor' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.get('/user/:usuario', async (req, res) => {
-  const { usuario } = req.params;
+app.get('/user/:username', async (req, res) => {
+  const { username } = req.params;
 
   try {
-    const paciente = await Patient.findOne({ usuario }).select('-password');
+    const patient = await Patient.findOne({ username }).select('-password');
 
-    if (!paciente) {
-      return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+    if (!patient) {
+      return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json(paciente);
+    res.json(patient);
   } catch (err) {
-    res.status(500).json({ error: 'Error al obtener los datos del usuario' });
+    res.status(500).json({ error: 'Error fetching user data' });
   }
 });
 
@@ -263,6 +316,77 @@ app.get('/api/food', async (_req, res) => {
     res.status(500).json({ error: 'Error al obtener alimentos' });
   }
 });
+
+app.get('/weeklyplan', async (_req: Request, res: Response) => {
+  try {
+    const weeklyPlans = await mongoose.model('WeeklyPlan').find().sort({ week_start: -1 }).lean();
+    return res.json(weeklyPlans);
+  } catch (error) {
+    console.error('❌ Error al obtener los WeeklyPlan:', error);
+    return res.status(500).json({ error: 'Error al obtener los planes semanales.' });
+  }
+});
+
+app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) => {
+  const { patient_id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido' });
+  }
+
+  try {
+    const latestPlan = await WeeklyPlan.findOne({
+      patient_id: JSON.parse(patient_id),
+    })
+    .sort({ week_start: -1 })
+    .lean();
+
+    if (!latestPlan) {
+      return res.status(404).json({ message: 'No se encontró ningún plan semanal.' });
+    }
+
+    return res.json(latestPlan);
+
+  } catch (error) {
+    console.error('❌ Error en /weeklyplan/latest:', error);
+    return res.status(500).json({ error: 'Error al obtener el plan semanal más reciente' });
+  }
+});
+
+// 📅 Obtener comidas del día actual para un paciente
+app.get('/weeklyplan/daily/:patient_id', async (req: Request, res: Response) => {
+  const { patient_id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido' });
+  }
+
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+  try {
+    const latestPlan = await WeeklyPlan.findOne({
+      patient_id: new mongoose.Types.ObjectId(patient_id)
+    }).sort({ week_start: -1 }).lean();
+
+    if (!latestPlan) {
+      return res.status(404).json({ message: 'No se encontró ningún plan semanal.' });
+    }
+
+    const todayMeals = latestPlan.meals.filter(meal => meal.day === today);
+
+    return res.json({
+      dailyCalories: latestPlan.dailyCalories,
+      protein: latestPlan.protein,
+      fat: latestPlan.fat,
+      carbs: latestPlan.carbs,
+      meals: todayMeals
+    });
+  } catch (error) {
+    console.error('❌ Error en /weeklyplan/daily:', error);
+    return res.status(500).json({ error: 'Error al obtener las comidas del día.' });
+  }
+});
+
 
 // 🚀 Arranque del servidor
 app.listen(PORT, () => {
