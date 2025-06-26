@@ -3,7 +3,11 @@ import bcrypt from 'bcrypt';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
+<<<<<<< HEAD
 import mongoose, { Document, Schema, Types } from 'mongoose';
+=======
+import mongoose from 'mongoose';
+>>>>>>> parent of 6b93fbc (nuevo back)
 
 dotenv.config();
 
@@ -29,47 +33,32 @@ const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
 
 // 📦 Modelos de Mongoose
 interface IPatient {
-  _id: string;
-  username: string;
-  password: string;
-  name: string;
+  nombre: string;
+  correo: string;
   email: string;
-  phone?: string;
-  age?: number;
-  gender?: string;
-  height_cm?: number;
-  weight_kg?: number;
-  objective?: string;
-  allergies?: string[];
-  dietary_restrictions?: string[];
-  registration_date?: Date;
-  notes?: string;
-  last_consultation?: Date | null;
-  nutritionist_id?: string;
-  isActive?: boolean;
+  usuario: string;
+  password: string;
+  edad?: number;
+  sexo?: string;
+  altura_cm?: number;
+  peso_kg?: number;
+  objetivo?: string;
+  ultima_consulta?: string;
 }
 
 const Patient = mongoose.model<IPatient>(
   'Patient',
   new mongoose.Schema({
-    _id: { type: String, required: true },
-    username: { type: String, required: true, unique: true },
+    nombre: { type: String, required: true },
+    correo: { type: String, required: true },
+    usuario: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    phone: { type: String },
-    age: { type: Number },
-    gender: { type: String, enum: ['male', 'female', 'other'] },
-    height_cm: { type: Number },
-    weight_kg: { type: Number },
-    objective: { type: String },
-    allergies: { type: [String], default: [] },
-    dietary_restrictions: { type: [String], default: [] },
-    registration_date: { type: Date, default: Date.now },
-    notes: { type: String, default: '' },
-    last_consultation: { type: Date, default: null },
-    nutritionist_id: { type: String },
-    isActive: { type: Boolean, default: true }
+    edad: { type: Number },
+    sexo: { type: String },
+    altura_cm: { type: Number },
+    peso_kg: { type: Number },
+    objetivo: { type: String },
+    ultima_consulta: { type: String }
   }, { collection: 'Patients' })
 );
 
@@ -100,6 +89,7 @@ const Food = mongoose.model<IFood>(
   new mongoose.Schema({}, { strict: false, collection: 'Food' })
 );
 
+<<<<<<< HEAD
 // 🍽️ NUEVO: Modelo para PatientMeal
 interface IPatientMealIngredient {
   food_id: string;
@@ -263,6 +253,8 @@ const WeeklyPlanSchema = new Schema<IWeeklyPlan>({
 
 const WeeklyPlan = mongoose.model<IWeeklyPlan>('WeeklyPlan', WeeklyPlanSchema);
 
+=======
+>>>>>>> parent of 6b93fbc (nuevo back)
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ Conectado a MongoDB Atlas'))
@@ -372,14 +364,10 @@ app.post('/search-food', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Missing fields: username and/or password' });
-  }
-
+// 🧾 Rutas de usuarios
+app.get('/usuarios', async (_req, res) => {
   try {
+<<<<<<< HEAD
     const patient = await Patient.findOne({ username });
 
     if (!patient) {
@@ -402,22 +390,64 @@ app.post('/login', async (req, res) => {
   } catch (err) {
     console.error('❌ Error en /login:', err);
     res.status(500).json({ error: 'Server error' });
+=======
+    const usuarios = await Patient.find();
+    res.json(usuarios);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener usuarios' });
+>>>>>>> parent of 6b93fbc (nuevo back)
   }
 });
 
-app.get('/user/:username', async (req, res) => {
-  const { username } = req.params;
+app.post('/usuarios', async (req, res) => {
+  try {
+    const nuevoUsuario = new Patient(req.body);
+    await nuevoUsuario.save();
+    res.status(201).json(nuevoUsuario);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al guardar usuario' });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  const { usuario, password } = req.body;
+
+  if (!usuario || !password) {
+    return res.status(400).json({ mensaje: 'Faltan campos: usuario y/o contraseña' });
+  }
 
   try {
-    const patient = await Patient.findOne({ username }).select('-password');
+    const paciente = await Patient.findOne({ usuario, password }).select('-password');
 
-    if (!patient) {
-      return res.status(404).json({ message: 'User not found' });
+    if (!paciente) {
+      return res.status(401).json({ mensaje: 'Credenciales incorrectas' });
     }
 
-    res.json(patient);
+    res.json({
+      mensaje: 'Inicio de sesión exitoso',
+      id: paciente._id,
+      usuario: paciente.usuario,
+      nombre: paciente.nombre,
+      correo: paciente.correo || paciente.email
+    });
   } catch (err) {
-    res.status(500).json({ error: 'Error fetching user data' });
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.get('/user/:usuario', async (req, res) => {
+  const { usuario } = req.params;
+
+  try {
+    const paciente = await Patient.findOne({ usuario }).select('-password');
+
+    if (!paciente) {
+      return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+    }
+
+    res.json(paciente);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener los datos del usuario' });
   }
 });
 
@@ -432,6 +462,7 @@ app.get('/api/food', async (_req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // 🍽️ NUEVO: Endpoints para PatientMeals
 
 // Crear una nueva comida personalizada
@@ -827,6 +858,8 @@ app.get('/weeklyplan/daily/:patient_id', async (req: Request, res: Response) => 
   }
 });
 
+=======
+>>>>>>> parent of 6b93fbc (nuevo back)
 // 🚀 Arranque del servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
