@@ -487,7 +487,7 @@ app.get('/PatientMeals/:patient_id', async (req, res) => {
   res.json(meals);
 });
 
-/* ==== Otros handlers (GET por id, PUT, DELETE)… usa mongoose.isValidObjectId y cast si editas) ==== */
+/* ==== Otros handlers (GET por id, PUT, DELETE)… usa mongoose.isValidObjectId y cast si editas) ==== 
 
 // ------------ Mongo y server ------------
 mongoose.connect(MONGODB_URI)
@@ -500,7 +500,7 @@ app.listen(PORT, () => console.log(`🚀 API corriendo en puerto ${PORT}`))
 
 
 
-// -----------------------------------
+// -----------------------------------*/
 
 // 🚀 Arranque del servidor
 app.listen(PORT, () => {
