@@ -268,23 +268,28 @@ app.post('/search-food', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/login', async (req, res) => {
-  const { username, password } = req.query; // ← Cambia a req.query para GET
-  
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+
   if (!username || !password) {
-    return res.status(400).json({ message: 'Missing fields' });
+    return res.status(400).json({ message: 'Missing fields: username and/or password' });
   }
 
   try {
-    const patient = await Patient.findOne({ 
-      username: username.toString() // ← Conversión explícita
-    }).select('+password');
+    const patient = await Patient.findOne({ username }).select('+password');
+    
+    if (!patient) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
 
-    if (!patient || !(await bcrypt.compare(password.toString(), patient.password))) {
+    const isMatch = await bcrypt.compare(password, patient.password);
+    
+    if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     const { password: _, ...patientData } = patient.toObject();
+    
     res.json({
       message: 'Login successful',
       patient: patientData
