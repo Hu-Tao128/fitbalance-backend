@@ -268,41 +268,26 @@ app.post('/search-food', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-
+app.get('/login', async (req, res) => {
+  const { username, password } = req.query; // ← Cambia a req.query para GET
+  
   if (!username || !password) {
-    return res.status(400).json({ message: 'Missing fields: username and/or password' });
+    return res.status(400).json({ message: 'Missing fields' });
   }
 
   try {
-    // Busca al paciente por username pero incluye la contraseña para verificación
-    const patient = await Patient.findOne({ username }).select('+password');
+    const patient = await Patient.findOne({ 
+      username: username.toString() // ← Conversión explícita
+    }).select('+password');
 
-    if (!patient) {
+    if (!patient || !(await bcrypt.compare(password.toString(), patient.password))) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Verifica la contraseña con bcrypt
-    const isMatch = await bcrypt.compare(password, patient.password);
-    
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
-
-    // Elimina la contraseña antes de enviar la respuesta
-    // Modifica tu respuesta del login así:
-    const patientWithoutPassword = (({ password, ...rest }) => rest)(patient.toObject());
-      res.json({
-      message: 'Login successful',
-      patient: patientWithoutPassword
-    });
-    
-    delete patientWithoutPassword.password;
-
+    const { password: _, ...patientData } = patient.toObject();
     res.json({
       message: 'Login successful',
-      patient: patientWithoutPassword
+      patient: patientData
     });
   } catch (err) {
     console.error('Login error:', err);
