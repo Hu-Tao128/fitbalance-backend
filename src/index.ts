@@ -3,6 +3,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import bcrypt from 'bcryptjs';
+
+const SALT_ROUNDS = 10;
 
 dotenv.config();
 
@@ -273,20 +276,36 @@ app.post('/login', async (req, res) => {
   }
 
   try {
-    const patient = await Patient.findOne({ username, password }).select('-password');
+    // Busca al paciente por username pero incluye la contraseña para verificación
+    const patient = await Patient.findOne({ username }).select('+password');
 
     if (!patient) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Verifica la contraseña con bcrypt
+    const isMatch = await bcrypt.compare(password, patient.password);
+    
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // Elimina la contraseña antes de enviar la respuesta
+    // Modifica tu respuesta del login así:
+    const patientWithoutPassword = (({ password, ...rest }) => rest)(patient.toObject());
+      res.json({
+      message: 'Login successful',
+      patient: patientWithoutPassword
+    });
+    
+    delete patientWithoutPassword.password;
+
     res.json({
       message: 'Login successful',
-      id: patient._id,
-      username: patient.username,
-      name: patient.name,
-      email: patient.email
+      patient: patientWithoutPassword
     });
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
