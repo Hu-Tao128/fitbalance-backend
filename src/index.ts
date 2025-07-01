@@ -158,6 +158,74 @@ const WeeklyPlanSchema = new Schema<IWeeklyPlan>({
 
 const WeeklyPlan = mongoose.model<IWeeklyPlan>('WeeklyPlan', WeeklyPlanSchema);
 
+interface IMealFood {
+  food_id: Types.ObjectId;
+  grams: number;
+  nutrients?: {
+    calories?: number;
+    protein?: number;
+    fat?: number;
+    carbs?: number;
+  };
+}
+
+interface IMeal {
+  type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  time: string;
+  foods: IMealFood[];
+  consumed?: boolean;
+  notes?: string;
+}
+
+interface IDailyMealsLog extends Document {
+  patient_id: Types.ObjectId;
+  date: Date;
+  totalCalories?: number;
+  totalProtein?: number;
+  totalFat?: number;
+  totalCarbs?: number;
+  meals: IMeal[];
+  notes?: string;
+}
+
+const DailyMealsLogSchema = new Schema<IDailyMealsLog>({
+  patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
+  date: { type: Date, required: true, index: true },
+  totalCalories: { type: Number, min: 0 },
+  totalProtein: { type: Number, min: 0 },
+  totalFat: { type: Number, min: 0 },
+  totalCarbs: { type: Number, min: 0 },
+  meals: {
+    type: [{
+      type: {
+        type: String,
+        enum: ['breakfast', 'lunch', 'dinner', 'snack'],
+        required: true
+      },
+      time: { type: String, required: true },
+      foods: {
+        type: [{
+          food_id: { type: Schema.Types.ObjectId, required: true, ref: 'Food' },
+          grams: { type: Number, required: true, min: 1 },
+          nutrients: {
+            calories: { type: Number, min: 0 },
+            protein: { type: Number, min: 0 },
+            fat: { type: Number, min: 0 },
+            carbs: { type: Number, min: 0 }
+          }
+        }],
+        required: true
+      },
+      consumed: { type: Boolean, default: false },
+      notes: { type: String }
+    }],
+    default: []
+  },
+  notes: { type: String }
+}, {
+  collection: 'DailyMealsLogs',
+  timestamps: true
+});
 
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
