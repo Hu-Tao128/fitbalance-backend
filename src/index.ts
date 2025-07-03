@@ -5,6 +5,9 @@ import express, { Request, Response } from 'express';
 import mongoose, { Document, Schema, Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
+
 const SALT_ROUNDS = 10;
 
 dotenv.config();
@@ -29,6 +32,29 @@ const FATSECRET_CONSUMER_SECRET = getEnv('FATSECRET_CONSUMER_SECRET');
 const NUTRITIONIX_APP_ID = getEnv('NUTRITIONIX_APP_ID');
 const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
 
+// Configuración del transporter de Nodemailer
+const transporter = nodemailer.createTransport({
+  service: process.env.EMAIL_SERVICE,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+interface IPasswordResetToken extends Document {
+  patient_id: Types.ObjectId;
+  token: string;
+  expiresAt: Date;
+}
+
+const PasswordResetTokenSchema = new Schema<IPasswordResetToken>({
+  patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
+  token: { type: String, required: true },
+  expiresAt: { type: Date, required: true, default: () => new Date(Date.now() + 3600000) } // 1 hora de expiración
+}, { collection: 'PasswordResetTokens' });
+
+const PasswordResetToken = mongoose.model<IPasswordResetToken>('PasswordResetToken', PasswordResetTokenSchema);
+
 // 📦 Modelos de Mongoose
 interface IPatient {
   _id: string;
@@ -49,9 +75,6 @@ interface IPatient {
   last_consultation?: Date | null;
   nutritionist_id?: string;
   isActive?: boolean;
-  portion_size_g: number;
-  category: string;
-  nutrients: Record<string, number>;
 }
 
 const Patient = mongoose.model<IPatient>(
@@ -99,7 +122,10 @@ interface IFood {
   percent_RI: any;
 }
 
-
+const Food = mongoose.model<IFood>(
+  'Food',
+  new mongoose.Schema({}, { strict: false, collection: 'Food' })
+);
 
 interface IWeeklyPlanFood {
   food_id: string;
@@ -227,6 +253,8 @@ const DailyMealsLogSchema = new Schema<IDailyMealsLog>({
   timestamps: true
 });
 
+const DailyMealsLog = mongoose.model<IDailyMealsLog>('DailyMealsLog', DailyMealsLogSchema);
+
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ Conectado a MongoDB Atlas'))
@@ -336,74 +364,134 @@ app.post('/search-food', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
+// Función para calcular totales diarios
+async function calculateDailyTotals(dailyLog: IDailyMealsLog) {
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalFat = 0;
+  let totalCarbs = 0;
 
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Missing fields: username and/or password' });
+  // Obtener detalles de todos los alimentos
+  const foodIds = dailyLog.meals.flatMap(meal => 
+    meal.foods.map(food => food.food_id)
+  );
+
+  const foods = await Food.find({ 
+    _id: { $in: foodIds } 
+  }).lean();
+
+  // Calcular nutrientes para cada comida
+  for (const meal of dailyLog.meals) {
+    for (const foodItem of meal.foods) {
+      const food = foods.find(f => f._id.equals(foodItem.food_id));
+      if (food) {
+        const ratio = foodItem.grams / food.portion_size_g;
+        
+        // Usar nutrientes calculados si están disponibles, si no, calcularlos
+        if (foodItem.nutrients?.calories) {
+          totalCalories += foodItem.nutrients.calories;
+        } else if (food.nutrients?.energy_kcal) {
+          totalCalories += food.nutrients.energy_kcal * ratio;
+        }
+
+        if (foodItem.nutrients?.protein) {
+          totalProtein += foodItem.nutrients.protein;
+        } else if (food.nutrients?.protein_g) {
+          totalProtein += food.nutrients.protein_g * ratio;
+        }
+
+        if (foodItem.nutrients?.fat) {
+          totalFat += foodItem.nutrients.fat;
+        } else if (food.nutrients?.fat_g) {
+          totalFat += food.nutrients.fat_g * ratio;
+        }
+
+        if (foodItem.nutrients?.carbs) {
+          totalCarbs += foodItem.nutrients.carbs;
+        } else if (food.nutrients?.carbohydrates_g) {
+          totalCarbs += food.nutrients.carbohydrates_g * ratio;
+        }
+      }
+    }
   }
 
+  // Actualizar totales
+  dailyLog.totalCalories = Math.round(totalCalories);
+  dailyLog.totalProtein = Math.round(totalProtein);
+  dailyLog.totalFat = Math.round(totalFat);
+  dailyLog.totalCarbs = Math.round(totalCarbs);
+}
+
+// Endpoint para obtener datos nutricionales diarios con objetivos
+app.get('/daily-nutrition', async (req: Request, res: Response) => {
   try {
-    const patient = await Patient.findOne({ username }).select('+password');
-    
-    if (!patient) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+    const { patient_id, date } = req.query;
+
+    if (!patient_id || !date) {
+      return res.status(400).json({ error: 'Faltan parámetros: patient_id y date' });
     }
 
-    const isMatch = await bcrypt.compare(password, patient.password);
-    
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+    if (!Types.ObjectId.isValid(patient_id as string)) {
+      return res.status(400).json({ error: 'ID de paciente no válido' });
     }
 
-    const { password: _, ...patientData } = patient.toObject();
-    
+    const logDate = new Date(date as string);
+    const startOfDay = new Date(logDate.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(logDate.setHours(23, 59, 59, 999));
+
+    // Buscar registro del día
+    let dailyLog = await DailyMealsLog.findOne({
+      patient_id: new Types.ObjectId(patient_id as string),
+      date: { $gte: startOfDay, $lte: endOfDay }
+    }).populate('meals.foods.food_id', 'name nutrients portion_size_g');
+
+    // Si no hay registro, crear uno vacío
+    if (!dailyLog) {
+      dailyLog = new DailyMealsLog({
+        patient_id: new Types.ObjectId(patient_id as string),
+        date: startOfDay,
+        meals: [],
+        totalCalories: 0,
+        totalProtein: 0,
+        totalFat: 0,
+        totalCarbs: 0
+      });
+    } else {
+      // Calcular totales si no están calculados
+      if (!dailyLog.totalCalories) {
+        await calculateDailyTotals(dailyLog);
+        await dailyLog.save();
+      }
+    }
+
+    // Obtener el plan semanal más reciente para incluir objetivos
+    const latestPlan = await WeeklyPlan.findOne({
+      patient_id: new Types.ObjectId(patient_id as string)
+    }).sort({ week_start: -1 }).lean();
+
     res.json({
-      message: 'Login successful',
-      patient: patientData
+      date: dailyLog.date,
+      consumed: {
+        calories: dailyLog.totalCalories || 0,
+        protein: dailyLog.totalProtein || 0,
+        fat: dailyLog.totalFat || 0,
+        carbs: dailyLog.totalCarbs || 0
+      },
+      goals: {
+        calories: latestPlan?.dailyCalories || 2000,
+        protein: latestPlan?.protein || 150,
+        fat: latestPlan?.fat || 70,
+        carbs: latestPlan?.carbs || 250
+      },
+      meals: dailyLog.meals
     });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-app.get('/user/:username', async (req, res) => {
-  const { username } = req.params;
-
-  try {
-    const patient = await Patient.findOne({ username }).select('-password');
-
-    if (!patient) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.json(patient);
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching user data' });
-  }
-});
-
-// 🍽 Ruta para obtener alimentos guardados
-app.get('/api/food', async (_req, res) => {
-  try {
-    const foods = await Food.find();
-    res.json(foods);
-  } catch (err) {
-    res.status(500).json({ error: 'Error al obtener alimentos' });
-  }
-});
-
-app.get('/weeklyplan', async (_req: Request, res: Response) => {
-  try {
-    const weeklyPlans = await mongoose.model('WeeklyPlan').find().sort({ week_start: -1 }).lean();
-    return res.json(weeklyPlans);
   } catch (error) {
-    console.error('❌ Error al obtener los WeeklyPlan:', error);
-    return res.status(500).json({ error: 'Error al obtener los planes semanales.' });
+    console.error('❌ Error en GET /daily-nutrition:', error);
+    res.status(500).json({ error: 'Error al obtener los datos nutricionales' });
   }
 });
 
+// Endpoint para obtener el plan semanal más reciente
 app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
 
@@ -413,13 +501,21 @@ app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) =>
 
   try {
     const latestPlan = await WeeklyPlan.findOne({
-      patient_id: JSON.parse(patient_id),
+      patient_id: new Types.ObjectId(patient_id),
     })
       .sort({ week_start: -1 })
       .lean();
 
     if (!latestPlan) {
-      return res.status(404).json({ message: 'No se encontró ningún plan semanal.' });
+      return res.status(404).json({ 
+        message: 'No se encontró ningún plan semanal.',
+        defaultValues: {
+          dailyCalories: 2000,
+          protein: 150,
+          fat: 70,
+          carbs: 250
+        }
+      });
     }
 
     return res.json(latestPlan);
@@ -464,120 +560,108 @@ app.get('/weeklyplan/daily/:patient_id', async (req: Request, res: Response) => 
   }
 });
 
-// COMIDAS PACIENTES --------------------------------------------------------
+// Login de paciente
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
 
-interface IPatientMealIngredient { food_id: Types.ObjectId; amount_g: number; }
-interface IPatientMeal extends Document {
-  patient_id: Types.ObjectId;
-  name: string;
-  ingredients: IPatientMealIngredient[];
-  nutrients: Record<string, number>;
-  instructions?: string;
-  created_at: Date;
-  updated_at: Date;
-}
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Faltan campos: username y/o password' });
+  }
 
+  try {
+    const patient = await Patient.findOne({ username }).select('+password');
+    
+    if (!patient) {
+      return res.status(401).json({ message: 'Credenciales inválidas' });
+    }
 
-const Food = mongoose.model<IFood>(
-  'Food',
-  new mongoose.Schema({}, { strict: false, collection: 'Food' })
-);
+    const isMatch = await bcrypt.compare(password, patient.password);
+    
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Credenciales inválidas' });
+    }
 
+    const { password: _, ...patientData } = patient.toObject();
+    
+    res.json({
+      message: 'Login exitoso',
+      patient: patientData
+    });
+  } catch (err) {
+    console.error('Error en login:', err);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
 
-const PatientMealSchema = new Schema<IPatientMeal>({
-  patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
-  name: { type: String, required: true },
-  ingredients: [{
-    food_id: { type: Schema.Types.ObjectId, required: true, ref: 'Food' },
-    amount_g: { type: Number, required: true, min: 1 }
-  }],
-  nutrients: {
-    energy_kcal: { type: Number, required: true, min: 0 },
-    protein_g: { type: Number, required: true, min: 0 },
-    carbohydrates_g: { type: Number, required: true, min: 0 },
-    fat_g: { type: Number, required: true, min: 0 },
-    fiber_g: { type: Number, required: true, min: 0 },
-    sugar_g: { type: Number, required: true, min: 0 },
-  },
-  instructions: { type: String, default: '' },
-  created_at: { type: Date, default: Date.now },
-  updated_at: { type: Date, default: Date.now },
-}, { collection: 'PatientMeals', timestamps: true });
+// Obtener información de usuario
+app.get('/user/:username', async (req, res) => {
+  const { username } = req.params;
 
-const PatientMeal = mongoose.model<IPatientMeal>('PatientMeal', PatientMealSchema);
+  try {
+    const patient = await Patient.findOne({ username }).select('-password');
 
-// ------------ Ruta alimentos (sin cambios) ------------
+    if (!patient) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json(patient);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener datos del usuario' });
+  }
+});
+
+// 🍽 Ruta para obtener alimentos guardados
 app.get('/api/food', async (_req, res) => {
-  try { res.json(await Food.find()); }
-  catch (err) {
-    console.error('❌ GET /api/food', err);
+  try {
+    const foods = await Food.find();
+    res.json(foods);
+  } catch (err) {
     res.status(500).json({ error: 'Error al obtener alimentos' });
   }
 });
 
-/* ======================================================
- * POST /PatientMeals   (ObjectId cast + validación)
- * ==================================================== */
-app.post('/PatientMeals', async (req: Request, res: Response) => {
+app.post('/send-reset-code', async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'El campo email es obligatorio.' });
+  }
+
   try {
-    const { patient_id, name, ingredients, nutrients, instructions = '' } = req.body;
-    if (!patient_id || !name || !Array.isArray(ingredients) || !nutrients)
-      return res.status(400).json({ error: 'Campos obligatorios faltantes' });
+    const patient = await Patient.findOne({ email });
 
-    if (!Types.ObjectId.isValid(patient_id))
-      return res.status(400).json({ error: 'patient_id inválido' });
-    const pid = new Types.ObjectId(patient_id);
+    if (!patient) {
+      return res.status(404).json({ message: 'No se encontró un paciente con ese correo.' });
+    }
 
-    const castIngredients = ingredients.map((ing: any) => {
-      if (!ing.food_id || typeof ing.amount_g !== 'number' || ing.amount_g <= 0)
-        throw new Error('Cada ingrediente necesita food_id y amount_g>0');
-      if (!Types.ObjectId.isValid(ing.food_id))
-        throw new Error(`food_id inválido: ${ing.food_id}`);
-      return { food_id: new Types.ObjectId(ing.food_id), amount_g: ing.amount_g };
+    // Generar un token único de 6 dígitos
+    const token = crypto.randomBytes(3).toString('hex'); // Ej: 'f3a1bc'
+
+    // Guardar el token en la base de datos
+    const resetToken = new PasswordResetToken({
+      patient_id: patient._id,
+      token,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000) // 1 hora
     });
 
-    const requiredN = ['energy_kcal', 'protein_g', 'carbohydrates_g', 'fat_g', 'fiber_g', 'sugar_g'];
-    for (const k of requiredN)
-      if (typeof nutrients[k] !== 'number' || nutrients[k] < 0)
-        return res.status(400).json({ error: `Nutriente ${k} debe ser numérico ≥0` });
+    await resetToken.save();
 
-    const meal = await PatientMeal.create({
-      patient_id: pid,
-      name: name.trim(),
-      ingredients: castIngredients,
-      nutrients,
-      instructions: instructions.trim(),
-    });
-    res.status(201).json({ message: 'Comida creada', meal });
-  } catch (err: any) {
-    console.error('❌ POST /PatientMeals', err);
-    res.status(500).json({ error: err.message || 'Error interno' });
+    // Enviar el correo
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Código de recuperación - Nutifrut',
+      text: `Hola ${patient.name},\n\nTu código de recuperación es: ${token}\nEste código expira en 1 hora.\n\nAtentamente,\nEl equipo de Nutifrut.`
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({ message: 'Código de recuperación enviado al correo del paciente.' });
+  } catch (error) {
+    console.error('❌ Error al enviar el código de recuperación:', error);
+    res.status(500).json({ error: 'Error al enviar el correo de recuperación.' });
   }
 });
-
-/* ==== GET /PatientMeals/:patient_id ==== */
-app.get('/PatientMeals/:patient_id', async (req, res) => {
-  const { patient_id } = req.params;
-  if (!Types.ObjectId.isValid(patient_id))
-    return res.status(400).json({ error: 'patient_id inválido' });
-  const meals = await PatientMeal.find({ patient_id }).sort({ created_at: -1 }).lean();
-  res.json(meals);
-});
-
-/* ==== Otros handlers (GET por id, PUT, DELETE)… usa mongoose.isValidObjectId y cast si editas) ==== 
-
-// ------------ Mongo y server ------------
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ Conectado a MongoDB Atlas'))
-  .catch(err => { console.error('❌ MongoDB', err); process.exit(1); });
-
-console.log('Voy a levantar Express…');
-app.listen(PORT, () => console.log(`🚀 API corriendo en puerto ${PORT}`))
-  .on('error', err => console.error('❌ Error al escuchar:', err));
-
-
-
-// -----------------------------------*/
 
 // 🚀 Arranque del servidor
 app.listen(PORT, () => {
