@@ -203,7 +203,7 @@ interface IMeal {
   notes?: string;
 }
 
-interface IDailyMealsLog extends Document {
+interface IDailyMealLog extends Document {
   patient_id: Types.ObjectId;
   date: Date;
   totalCalories?: number;
@@ -214,7 +214,7 @@ interface IDailyMealsLog extends Document {
   notes?: string;
 }
 
-const DailyMealsLogSchema = new Schema<IDailyMealsLog>({
+const DailyMealLogSchema = new Schema<IDailyMealLog>({
   patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
   date: { type: Date, required: true, index: true },
   totalCalories: { type: Number, min: 0 },
@@ -249,11 +249,11 @@ const DailyMealsLogSchema = new Schema<IDailyMealsLog>({
   },
   notes: { type: String }
 }, {
-  collection: 'DailyMealsLogs',
+  collection: 'DailyMealLogs',
   timestamps: true
 });
 
-const DailyMealsLog = mongoose.model<IDailyMealsLog>('DailyMealsLog', DailyMealsLogSchema);
+const DailyMealLog = mongoose.model<IDailyMealLog>('DailyMealLog', DailyMealLogSchema);
 
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
@@ -365,7 +365,7 @@ app.post('/search-food', async (req: Request, res: Response) => {
 });
 
 // Función para calcular totales diarios
-async function calculateDailyTotals(dailyLog: IDailyMealsLog) {
+async function calculateDailyTotals(dailyLog: IDailyMealLog) {
   let totalCalories = 0;
   let totalProtein = 0;
   let totalFat = 0;
@@ -440,14 +440,14 @@ app.get('/daily-nutrition', async (req: Request, res: Response) => {
     const endOfDay = new Date(logDate.setHours(23, 59, 59, 999));
 
     // Buscar registro del día
-    let dailyLog = await DailyMealsLog.findOne({
+    let dailyLog = await DailyMealLog.findOne({
       patient_id: new Types.ObjectId(patient_id as string),
       date: { $gte: startOfDay, $lte: endOfDay }
     }).populate('meals.foods.food_id', 'name nutrients portion_size_g');
 
     // Si no hay registro, crear uno vacío
     if (!dailyLog) {
-      dailyLog = new DailyMealsLog({
+      dailyLog = new DailyMealLog({
         patient_id: new Types.ObjectId(patient_id as string),
         date: startOfDay,
         meals: [],
