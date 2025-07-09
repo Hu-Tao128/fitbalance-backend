@@ -1,12 +1,12 @@
 import axios from "axios";
+import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import mongoose, { Document, Schema, Types } from 'mongoose';
-import bcrypt from 'bcryptjs';
 
-import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 const SALT_ROUNDS = 10;
 
@@ -40,6 +40,13 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS
   }
 });
+
+// ===========================================================================
+// ⭐⭐⭐ 1. COLOQUE AQUÍ TODAS LAS INTERFACES Y MODELOS DE MONGOOSE ⭐⭐⭐
+// Esto incluye `IPasswordResetToken`, `Patient`, `Food`, `IWeeklyPlanFood`,
+// `IWeeklyMeal`, `IWeeklyPlan`, `IMealFood`, `IMeal`, `IDailyMealLog`,
+// y AHORA TAMBIÉN `IPatientMeal` que tenías al final.
+// ===========================================================================
 
 interface IPasswordResetToken extends Document {
   patient_id: Types.ObjectId;
@@ -255,6 +262,56 @@ const DailyMealLogSchema = new Schema<IDailyMealLog>({
 
 const DailyMealLog = mongoose.model<IDailyMealLog>('DailyMealLog', DailyMealLogSchema);
 
+// ⭐⭐⭐ AQUÍ SE MUEVE LA INTERFAZ Y MODELO DE PATIENTMEAL DEL FINAL ⭐⭐⭐
+interface IPatientMeal extends Document {
+  patient_id: Types.ObjectId;
+  name: string;
+  ingredients: {
+    food_id: Types.ObjectId; // Referencia al _id del alimento en la colección Food
+    amount_g: number;
+  }[];
+  nutrients: {
+    energy_kcal: number;
+    protein_g: number;
+    carbohydrates_g: number;
+    fat_g: number;
+    fiber_g: number;
+    sugar_g: number;
+  };
+  instructions?: string;
+  created_at: Date; // Usamos created_at para coincidir con tu esquema
+  updated_at: Date; // Usamos updated_at para coincidir con tu esquema
+}
+
+const PatientMealSchema = new Schema<IPatientMeal>({
+  patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
+  name: { type: String, required: true },
+  ingredients: [{
+    food_id: { type: Schema.Types.ObjectId, required: true, ref: 'Food' },
+    amount_g: { type: Number, required: true, min: 1 },
+  }],
+  nutrients: {
+    energy_kcal: { type: Number, required: true, min: 0 },
+    protein_g: { type: Number, required: true, min: 0 },
+    carbohydrates_g: { type: Number, required: true, min: 0 },
+    fat_g: { type: Number, required: true, min: 0 },
+    fiber_g: { type: Number, required: true, min: 0 },
+    sugar_g: { type: Number, required: true, min: 0 },
+  },
+  instructions: { type: String },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+}, {
+  collection: 'PatientMeals', // Coincide con el nombre de tu colección
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } // Mongoose maneja estos campos automáticamente
+});
+
+const PatientMeal = mongoose.model<IPatientMeal>('PatientMeal', PatientMealSchema);
+
+
+// ===========================================================================
+// ⭐⭐⭐ 2. LA CONEXIÓN A MONGODB VA AQUÍ ⭐⭐⭐
+// ===========================================================================
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ Conectado a MongoDB Atlas'))
@@ -263,7 +320,13 @@ mongoose.connect(MONGODB_URI)
     process.exit(1);
   });
 
-// 🧠 Token de FatSecret (con cache)
+// ===========================================================================
+// ⭐⭐⭐ 3. TODAS LAS RUTAS Y FUNCIONES AUXILIARES (no Express middleware) AQUÍ ⭐⭐⭐
+// Esto incluye `getFatSecretToken`, `searchFatSecretByText`, `calculateDailyTotals`
+// Y **TODAS LAS RUTAS (app.get, app.post, app.put, app.delete)**
+// ===========================================================================
+
+// 🧠 Token de FatSecret (con cache) y función de búsqueda
 let fatSecretAccessToken: string | null = null;
 let fatSecretTokenExpiry = 0;
 
@@ -317,6 +380,68 @@ async function searchFatSecretByText(query: string) {
   return response.data;
 }
 
+// Función para calcular totales diarios
+async function calculateDailyTotals(dailyLog: IDailyMealLog) {
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalFat = 0;
+  let totalCarbs = 0;
+
+  // Obtener detalles de todos los alimentos
+  const foodIds = dailyLog.meals.flatMap(meal =>
+    meal.foods.map(food => food.food_id)
+  );
+
+  const foods = await Food.find({
+    _id: { $in: foodIds }
+  }).lean();
+
+  // Calcular nutrientes para cada comida
+  for (const meal of dailyLog.meals) {
+    for (const foodItem of meal.foods) {
+      const food = foods.find(f => f._id.equals(foodItem.food_id));
+      if (food) {
+        const ratio = foodItem.grams / food.portion_size_g;
+
+        // Usar nutrientes calculados si están disponibles, si no, calcularlos
+        if (foodItem.nutrients?.calories) {
+          totalCalories += foodItem.nutrients.calories;
+        } else if (food.nutrients?.energy_kcal) {
+          totalCalories += food.nutrients.energy_kcal * ratio;
+        }
+
+        if (foodItem.nutrients?.protein) {
+          totalProtein += foodItem.nutrients.protein;
+        } else if (food.nutrients?.protein_g) {
+          totalProtein += food.nutrients.protein_g * ratio;
+        }
+
+        if (foodItem.nutrients?.fat) {
+          totalFat += foodItem.nutrients.fat;
+        } else if (food.nutrients?.fat_g) {
+          totalFat += food.nutrients.fat_g * ratio;
+        }
+
+        if (foodItem.nutrients?.carbs) {
+          totalCarbs += foodItem.nutrients.carbs;
+        } else if (food.nutrients?.carbohydrates_g) {
+          totalCarbs += food.nutrients.carbohydrates_g * ratio;
+        }
+      }
+    }
+  }
+
+  // Actualizar totales
+  dailyLog.totalCalories = Math.round(totalCalories);
+  dailyLog.totalProtein = Math.round(totalProtein);
+  dailyLog.totalFat = Math.round(totalFat);
+  dailyLog.totalCarbs = Math.round(totalCarbs);
+}
+
+// ===========================================================================
+// ⭐⭐⭐ 3.1. Rutas de API para Patient, Food, WeeklyPlan, DailyMealLog, etc. ⭐⭐⭐
+// ===========================================================================
+
 // 🧠 Ruta combinada de búsqueda nutricional
 app.post('/search-food', async (req: Request, res: Response) => {
   const { query } = req.body;
@@ -363,64 +488,6 @@ app.post('/search-food', async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Error en la búsqueda de alimentos' });
   }
 });
-
-// Función para calcular totales diarios
-async function calculateDailyTotals(dailyLog: IDailyMealLog) {
-  let totalCalories = 0;
-  let totalProtein = 0;
-  let totalFat = 0;
-  let totalCarbs = 0;
-
-  // Obtener detalles de todos los alimentos
-  const foodIds = dailyLog.meals.flatMap(meal => 
-    meal.foods.map(food => food.food_id)
-  );
-
-  const foods = await Food.find({ 
-    _id: { $in: foodIds } 
-  }).lean();
-
-  // Calcular nutrientes para cada comida
-  for (const meal of dailyLog.meals) {
-    for (const foodItem of meal.foods) {
-      const food = foods.find(f => f._id.equals(foodItem.food_id));
-      if (food) {
-        const ratio = foodItem.grams / food.portion_size_g;
-        
-        // Usar nutrientes calculados si están disponibles, si no, calcularlos
-        if (foodItem.nutrients?.calories) {
-          totalCalories += foodItem.nutrients.calories;
-        } else if (food.nutrients?.energy_kcal) {
-          totalCalories += food.nutrients.energy_kcal * ratio;
-        }
-
-        if (foodItem.nutrients?.protein) {
-          totalProtein += foodItem.nutrients.protein;
-        } else if (food.nutrients?.protein_g) {
-          totalProtein += food.nutrients.protein_g * ratio;
-        }
-
-        if (foodItem.nutrients?.fat) {
-          totalFat += foodItem.nutrients.fat;
-        } else if (food.nutrients?.fat_g) {
-          totalFat += food.nutrients.fat_g * ratio;
-        }
-
-        if (foodItem.nutrients?.carbs) {
-          totalCarbs += foodItem.nutrients.carbs;
-        } else if (food.nutrients?.carbohydrates_g) {
-          totalCarbs += food.nutrients.carbohydrates_g * ratio;
-        }
-      }
-    }
-  }
-
-  // Actualizar totales
-  dailyLog.totalCalories = Math.round(totalCalories);
-  dailyLog.totalProtein = Math.round(totalProtein);
-  dailyLog.totalFat = Math.round(totalFat);
-  dailyLog.totalCarbs = Math.round(totalCarbs);
-}
 
 // Endpoint para obtener datos nutricionales diarios con objetivos
 app.get('/daily-nutrition', async (req: Request, res: Response) => {
@@ -507,7 +574,7 @@ app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) =>
       .lean();
 
     if (!latestPlan) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'No se encontró ningún plan semanal.',
         defaultValues: {
           dailyCalories: 2000,
@@ -570,19 +637,19 @@ app.post('/login', async (req, res) => {
 
   try {
     const patient = await Patient.findOne({ username }).select('+password');
-    
+
     if (!patient) {
       return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
     const isMatch = await bcrypt.compare(password, patient.password);
-    
+
     if (!isMatch) {
       return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
     const { password: _, ...patientData } = patient.toObject();
-    
+
     res.json({
       message: 'Login exitoso',
       patient: patientData
@@ -663,6 +730,190 @@ app.post('/send-reset-code', async (req: Request, res: Response) => {
   }
 });
 
+// ===========================================================================
+// ⭐⭐⭐ 3.2. Rutas Específicas de PatientMeal y DailyMealLogs/add-custom-meal AQUÍ ⭐⭐⭐
+// ===========================================================================
+
+// 👉 Endpoint para crear una comida personalizada (POST /PatientMeals)
+app.post('/PatientMeals', async (req: Request, res: Response) => {
+  const { patient_id, name, ingredients, nutrients, instructions } = req.body;
+
+  if (!patient_id || !name || !ingredients || ingredients.length === 0 || !nutrients) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios o la lista de ingredientes está vacía.' });
+  }
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido.' });
+  }
+
+  try {
+    const newMeal = new PatientMeal({
+      patient_id: new mongoose.Types.ObjectId(patient_id),
+      name,
+      ingredients: ingredients.map((ing: any) => ({
+        food_id: new mongoose.Types.ObjectId(ing.food_id),
+        amount_g: ing.amount_g,
+      })),
+      nutrients,
+      instructions,
+    });
+
+    await newMeal.save();
+    res.status(201).json({ message: 'Comida personalizada creada con éxito', meal: newMeal });
+  } catch (error) {
+    console.error('❌ Error al crear comida personalizada:', error);
+    res.status(500).json({ error: 'Error interno del servidor al crear comida.' });
+  }
+});
+
+// 👉 Endpoint para obtener todas las comidas personalizadas de un paciente (GET /PatientMeals/:patient_id)
+app.get('/PatientMeals/:patient_id', async (req: Request, res: Response) => {
+  const { patient_id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido.' });
+  }
+
+  try {
+    const meals = await PatientMeal.find({ patient_id: new mongoose.Types.ObjectId(patient_id) })
+      .populate('ingredients.food_id', 'name portion_size_g nutrients'); // Popula para obtener detalles del alimento
+
+    res.json(meals);
+  } catch (error) {
+    console.error('❌ Error al obtener comidas personalizadas:', error);
+    res.status(500).json({ error: 'Error interno del servidor al obtener comidas.' });
+  }
+});
+
+// 👉 Endpoint para actualizar una comida personalizada (PUT /PatientMeals/:meal_id)
+app.put('/PatientMeals/:meal_id', async (req: Request, res: Response) => {
+  const { meal_id } = req.params;
+  const { name, ingredients, nutrients, instructions } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(meal_id)) {
+    return res.status(400).json({ error: 'ID de comida no válido.' });
+  }
+  if (!name || !ingredients || ingredients.length === 0 || !nutrients) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios o la lista de ingredientes está vacía.' });
+  }
+
+  try {
+    const updatedMeal = await PatientMeal.findByIdAndUpdate(
+      meal_id,
+      {
+        name,
+        ingredients: ingredients.map((ing: any) => ({
+          food_id: new mongoose.Types.ObjectId(ing.food_id),
+          amount_g: ing.amount_g,
+        })),
+        nutrients,
+        instructions,
+        updated_at: new Date() // Actualiza la fecha de modificación
+      },
+      { new: true } // Retorna el documento actualizado
+    );
+
+    if (!updatedMeal) {
+      return res.status(404).json({ message: 'Comida personalizada no encontrada.' });
+    }
+    res.json({ message: 'Comida personalizada actualizada con éxito', meal: updatedMeal });
+  } catch (error) {
+    console.error('❌ Error al actualizar comida personalizada:', error);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar comida.' });
+  }
+});
+
+// 👉 Endpoint para eliminar una comida personalizada (DELETE /PatientMeals/:meal_id)
+app.delete('/PatientMeals/:meal_id', async (req: Request, res: Response) => {
+  const { meal_id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(meal_id)) {
+    return res.status(400).json({ error: 'ID de comida no válido.' });
+  }
+
+  try {
+    const deletedMeal = await PatientMeal.findByIdAndDelete(meal_id);
+    if (!deletedMeal) {
+      return res.status(404).json({ message: 'Comida personalizada no encontrada.' });
+    }
+    res.json({ message: 'Comida personalizada eliminada con éxito.' });
+  } catch (error) {
+    console.error('❌ Error al eliminar comida personalizada:', error);
+    res.status(500).json({ error: 'Error interno del servidor al eliminar comida.' });
+  }
+});
+
+// 👉 Endpoint para añadir una comida personalizada al DailyMealLog (POST /DailyMealLogs/add-custom-meal)
+app.post('/DailyMealLogs/add-custom-meal', async (req: Request, res: Response) => {
+  const { patient_id, meal_id, type, time } = req.body;
+
+  if (!patient_id || !meal_id || !type || !time) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios: patient_id, meal_id, type, time.' });
+  }
+  if (!mongoose.Types.ObjectId.isValid(patient_id) || !mongoose.Types.ObjectId.isValid(meal_id)) {
+    return res.status(400).json({ error: 'IDs de paciente o comida no válidos.' });
+  }
+
+  try {
+    const patientMeal = await PatientMeal.findById(meal_id).populate('ingredients.food_id', 'name nutrients portion_size_g');
+
+    if (!patientMeal) {
+      return res.status(404).json({ message: 'Comida personalizada no encontrada.' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Establecer la fecha al inicio del día
+
+    let dailyLog = await DailyMealLog.findOne({
+      patient_id: new mongoose.Types.ObjectId(patient_id),
+      date: today,
+    });
+
+    if (!dailyLog) {
+      dailyLog = new DailyMealLog({
+        patient_id: new mongoose.Types.ObjectId(patient_id),
+        date: today,
+        meals: [],
+        totalCalories: 0,
+        totalProtein: 0,
+        totalFat: 0,
+        totalCarbs: 0,
+      });
+    }
+
+    // Asegurarse de que los nutrientes estén definidos en patientMeal.nutrients
+    const { energy_kcal, protein_g, carbohydrates_g, fat_g } = patientMeal.nutrients;
+
+    // Actualizar totales en el DailyMealLog
+    dailyLog.totalCalories = (dailyLog.totalCalories || 0) + energy_kcal;
+    dailyLog.totalProtein = (dailyLog.totalProtein || 0) + protein_g;
+    dailyLog.totalFat = (dailyLog.totalFat || 0) + fat_g;
+    dailyLog.totalCarbs = (dailyLog.totalCarbs || 0) + carbohydrates_g;
+
+    // Añadir la comida personalizada como una "comida" en el log diario
+    dailyLog.meals.push({
+      type,
+      time,
+      foods: patientMeal.ingredients.map(ing => ({
+        food_id: ing.food_id._id, // Usar el _id del alimento populado
+        grams: ing.amount_g,
+      })),
+      notes: `Comida personalizada: ${patientMeal.name}`,
+      consumed: true,
+    });
+
+    await dailyLog.save();
+
+    res.status(200).json({ message: 'Comida personalizada añadida al registro diario.', dailyLog });
+  } catch (error) {
+    console.error('❌ Error al añadir comida personalizada al DailyMealLog:', error);
+    res.status(500).json({ error: 'Error interno del servidor al añadir comida personalizada.' });
+  }
+});
+
+
+// ===========================================================================
+// ⭐⭐⭐ 4. FINALMENTE, EL ARRANQUE DEL SERVIDOR VA AQUÍ AL FINAL ⭐⭐⭐
+// ===========================================================================
 // 🚀 Arranque del servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
