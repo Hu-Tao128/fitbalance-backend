@@ -40,8 +40,8 @@ mongoose.connect(MONGODB_URI)
       console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
     });
   })
-  .catch((err) => {
-    console.error('❌ Error al conectar a MongoDB:', err);
+  .catch((error) => {
+    console.error('❌ Error al conectar a MongoDB:', error);
     process.exit(1);
   });
 
@@ -568,8 +568,8 @@ app.get('/weeklyplan/daily/:patient_id', async (req, res) => {
     plan.meals = enrichedMeals;
 
     res.json(plan);
-  } catch (err) {
-    console.error('Error al obtener el plan diario:', err);
+  } catch (error) {
+    console.error('Error al obtener el plan diario:', error);
     res.status(500).json({ error: 'Error al obtener el plan diario' });
   }
 });
@@ -601,8 +601,8 @@ app.post('/login', async (req, res) => {
       message: 'Login exitoso',
       patient: patientData
     });
-  } catch (err) {
-    console.error('Error en login:', err);
+  } catch (error) {
+    console.error('Error en login:', error);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
@@ -619,7 +619,7 @@ app.get('/user/:username', async (req, res) => {
     }
 
     res.json(patient);
-  } catch (err) {
+  } catch (error) {
     res.status(500).json({ error: 'Error al obtener datos del usuario' });
   }
 });
@@ -629,7 +629,7 @@ app.get('/api/food', async (_req, res) => {
   try {
     const foods = await Food.find();
     res.json(foods);
-  } catch (err) {
+  } catch (error) {
     res.status(500).json({ error: 'Error al obtener alimentos' });
   }
 });
