@@ -889,7 +889,7 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
     await dailyLog.save();
 
     res.status(200).json({ message: "Comida añadida", dailyLog });
-  } catch (err) {
+  } catch (error) {
     res.status(500).json({ error: "Error al añadir la comida" });
   }
 });
