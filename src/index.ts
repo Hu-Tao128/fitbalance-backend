@@ -389,7 +389,6 @@ async function calculateDailyTotals(dailyLog: IDailyMealLog) {
     meal.foods.map(food => new Types.ObjectId(food.food_id))
   );
 
-
   const foods = await Food.find({
     _id: { $in: foodIds }
   }).lean();
@@ -437,28 +436,34 @@ async function calculateDailyTotals(dailyLog: IDailyMealLog) {
 
 }
 
-// Endpoint para obtener datos nutricionales diarios con objetivos
+// Endpoint existente (/daily-nutrition) - Versión corregida
 app.get("/daily-nutrition", async (req: Request, res: Response) => {
   try {
     const { patient_id, date } = req.query;
     if (!patient_id || !date) {
-      console.log("❌ Parámetros faltantes:", { patient_id, date });
       return res.status(400).json({ error: "Missing patient_id or date" });
     }
 
     const pid = new Types.ObjectId(patient_id as string);
-    const day = new Date(date as string);
-    const start = new Date(day.setHours(0, 0, 0, 0));
-    const end = new Date(day.setHours(23, 59, 59, 999));
+    const inputDate = new Date(date as string);
+    
+    // Normalizar fecha (a medianoche)
+    const startOfDay = new Date(inputDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setHours(23, 59, 59, 999);
 
-    let log = await DailyMealLog.findOne({ patient_id: pid, date: { $gte: start, $lte: end } });
-
-    console.log("⏳ Intentando guardar DailyMealLog:", JSON.stringify(log, null, 2));
+    // Buscar documento existente (usando el rango correcto)
+    let log = await DailyMealLog.findOne({ 
+      patient_id: pid, 
+      date: { $gte: startOfDay, $lte: endOfDay } 
+    });
 
     if (!log) {
+      // Crear nuevo documento con fecha normalizada (si no existe)
       log = new DailyMealLog({
         patient_id: pid,
-        date: start,
+        date: startOfDay, // ← Fecha normalizada aquí
         meals: [],
         totalCalories: 0,
         totalProtein: 0,
@@ -466,30 +471,17 @@ app.get("/daily-nutrition", async (req: Request, res: Response) => {
         totalCarbs: 0,
         caloriesConsumed: 0
       });
+      await log.save();
     }
 
-    if (!log.totalCalories) {
-      await calculateDailyTotals(log);
-      console.log("Documento DailyMealLog antes de guardar:", JSON.stringify(log.toObject(), null, 2));
-
-      await log.save().catch((error: any) => {
-        console.error('Error al guardar DailyMealLog:', error.message);
-        if (error?.errInfo?.details?.schemaRulesNotSatisfied) {
-          console.dir(error.errInfo.details.schemaRulesNotSatisfied, { depth: null });
-        }
-        throw error; // Lo relanzas para que el catch externo lo capture
-      });
-    }
-
-    console.log("DailyMealLog guardado con éxito");
-
+    // Resto de tu lógica...
     res.json({
       date: log.date,
       consumed: {
-        calories: log.totalCalories,
-        protein: log.totalProtein,
-        fat: log.totalFat,
-        carbs: log.totalCarbs,
+        calories: log.totalCalories || 0,
+        protein: log.totalProtein || 0,
+        fat: log.totalFat || 0,
+        carbs: log.totalCarbs || 0,
       },
       meals: log.meals,
     });
@@ -498,7 +490,6 @@ app.get("/daily-nutrition", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
 
 // Endpoint para obtener el plan semanal más reciente
 app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) => {
@@ -693,8 +684,8 @@ interface IPatientMeal extends Document {
     sugar_g: number;
   };
   instructions?: string;
-  created_at: Date; // Usamos created_at para coincidir con tu esquema
-  updated_at: Date; // Usamos updated_at para coincidir con tu esquema
+  created_at: Date;
+  updated_at: Date;
 }
 
 const PatientMealSchema = new Schema<IPatientMeal>({
@@ -751,7 +742,6 @@ app.post('/PatientMeals', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Error interno del servidor al crear comida.' });
   }
 });
-
 
 // 👉 Endpoint para obtener todas las comidas personalizadas de un paciente (GET /PatientMeals/:patient_id)
 app.get('/PatientMeals/:patient_id', async (req: Request, res: Response) => {
@@ -891,5 +881,134 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
     res.status(200).json({ message: "Comida añadida", dailyLog });
   } catch (error) {
     res.status(500).json({ error: "Error al añadir la comida" });
+  }
+});
+
+// obtener todos los registros de DailyMealLogs de un paciente (para estadísticas)
+app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) => {
+  const { patient_id } = req.params;
+  
+  // Validar el ID del paciente
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido' });
+  }
+
+  try {
+    // Convertir el ID a ObjectId
+    const pid = new Types.ObjectId(patient_id);
+    
+    // Obtener todos los logs del paciente, ordenados por fecha (más reciente primero)
+    const logs = await DailyMealLog.find({ patient_id: pid })
+      .sort({ date: -1 }) // Orden descendente por fecha
+      .lean();
+
+    // Si no hay logs, devolver un array vacío
+    if (!logs || logs.length === 0) {
+      return res.json([]);
+    }
+
+    // Opcional: Calcular los totales si no están presentes
+    const logsWithTotals = await Promise.all(logs.map(async log => {
+      // Si ya tiene totales calculados, devolverlo tal cual
+      if (log.totalCalories !== undefined && 
+          log.totalProtein !== undefined && 
+          log.totalFat !== undefined && 
+          log.totalCarbs !== undefined) {
+        return log;
+      }
+      
+      // Si no tiene totales, calcularlos
+      const logDoc = new DailyMealLog(log);
+      await calculateDailyTotals(logDoc);
+      return logDoc.toObject();
+    }));
+
+    // Formatear la respuesta para estadísticas
+    const formattedLogs = logsWithTotals.map(log => ({
+      date: log.date,
+      totals: {
+        calories: log.totalCalories || 0,
+        protein: log.totalProtein || 0,
+        fat: log.totalFat || 0,
+        carbs: log.totalCarbs || 0,
+      },
+      meals: log.meals,
+      notes: log.notes
+    }));
+
+    res.json(formattedLogs);
+
+  } catch (error: any) {
+    console.error('❌ Error en /daily-meal-logs/all:', error);
+    res.status(500).json({ error: 'Error al obtener los registros de comidas' });
+  }
+});
+
+// 📅 Endpoint unificado para obtener/crear registro diario
+app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response) => {
+  const { patient_id } = req.params;
+  
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido' });
+  }
+
+  try {
+    const pid = new Types.ObjectId(patient_id);
+    
+    // 1. Definir rango del día actual
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // 2. Buscar registro existente
+    let log = await DailyMealLog.findOne({ 
+      patient_id: pid, 
+      date: { $gte: todayStart, $lte: todayEnd }
+    });
+
+    // 3. Si no existe, crear uno nuevo (como en /daily-nutrition)
+    if (!log) {
+      log = new DailyMealLog({
+        patient_id: pid,
+        date: todayStart, // Fecha normalizada a medianoche
+        meals: [],
+        totalCalories: 0,
+        totalProtein: 0,
+        totalFat: 0,
+        totalCarbs: 0,
+        caloriesConsumed: 0
+      });
+      
+      await log.save();
+    }
+
+    // 4. Calcular totales si faltan (por si acaso)
+    if (!log.totalCalories) {
+      await calculateDailyTotals(log);
+      await log.save();
+    }
+
+    // 5. Formatear respuesta
+    const response = {
+      date: log.date,
+      totals: {
+        calories: log.totalCalories || 0,
+        protein: log.totalProtein || 0,
+        fat: log.totalFat || 0,
+        carbs: log.totalCarbs || 0,
+      },
+      meals: log.meals,
+      notes: log.notes
+    };
+
+    res.json(response);
+
+  } catch (error: any) {
+    console.error('❌ Error en /daily-meal-logs/today:', error);
+    res.status(500).json({ 
+      error: 'Error al obtener/crear registro diario',
+      details: error.message 
+    });
   }
 });
