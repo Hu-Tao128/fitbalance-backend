@@ -1041,3 +1041,60 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
     });
   }
 });
+
+// 👉 Nuevo endpoint: añade una comida del WeeklyPlan al DailyMealLog
+app.post("/DailyMealLogs/add-weekly-meal", async (req: Request, res: Response) => {
+  const { patient_id, meal } = req.body;
+
+  if (!patient_id || !meal) {
+    return res.status(400).json({ error: "Faltan datos obligatorios (patient_id, meal)" });
+  }
+
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Buscar o crear el log diario
+    let dailyLog = await DailyMealLog.findOne({ patient_id, date: today });
+    if (!dailyLog) {
+      dailyLog = new DailyMealLog({
+        patient_id,
+        date: today,
+        meals: [],
+        totalCalories: 0,
+        totalProtein: 0,
+        totalFat: 0,
+        totalCarbs: 0,
+        caloriesConsumed: 0,
+      });
+    }
+
+    // Evitar duplicar comidas
+    const alreadyExists = dailyLog.meals.some(
+      (m) => m.type === meal.type && m.time === meal.time
+    );
+    if (alreadyExists) {
+      return res.status(400).json({ error: "Esta comida ya fue añadida." });
+    }
+
+    dailyLog.meals.push({
+      day: meal.day,
+      type: meal.type,
+      time: meal.time,
+      foods: meal.foods.map((f: any) => ({
+        food_id: f.food_id,
+        grams: f.grams,
+      })),
+      consumed: true,
+      notes: `Comida añadida desde el WeeklyPlan`,
+    });
+
+    await calculateDailyTotals(dailyLog);
+    await dailyLog.save();
+
+    res.status(200).json({ message: "Comida del plan añadida al log diario", dailyLog });
+  } catch (err) {
+    console.error("Error en /DailyMealLogs/add-weekly-meal:", err);
+    res.status(500).json({ error: "Error al añadir la comida al log diario" });
+  }
+});
