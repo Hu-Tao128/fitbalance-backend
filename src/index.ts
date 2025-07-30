@@ -653,7 +653,7 @@ app.post('/send-reset-code', async (req: Request, res: Response) => {
     }
 
     // Generar un token único de 6 dígitos
-    const token = crypto.randomBytes(3).toString('hex'); // Ej: 'f3a1bc'
+    const token = crypto.randomBytes(3).toString('hex');
 
     // Guardar el token en la base de datos
     const resetToken = new PasswordResetToken({
