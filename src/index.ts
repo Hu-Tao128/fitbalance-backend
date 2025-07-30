@@ -35,9 +35,9 @@ const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
 // 🔌 Conexión a MongoDB
 mongoose.connect(MONGODB_URI)
   .then(() => {
-    console.log('✅ Conectado a MongoDB Atlas');
+    console.log('Conectado a MongoDB Atlas');
     app.listen(PORT, () => {
-      console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+      console.log(`Servidor corriendo en http://localhost:${PORT}`);
     });
   })
   .catch((err) => {
@@ -242,7 +242,7 @@ const DailyMealLogSchema = new Schema<IDailyMealLog>({
   totalProtein: { type: Number, min: 0 },
   totalFat: { type: Number, min: 0 },
   totalCarbs: { type: Number, min: 0 },
-  caloriesConsumed:{ type: Number, min: 0},
+  caloriesConsumed: { type: Number, min: 0 },
   meals: {
     type: [{
       day: {
@@ -258,9 +258,9 @@ const DailyMealLogSchema = new Schema<IDailyMealLog>({
       time: { type: String, required: true },
       foods: {
         type: [{
-            food_id: { type: Schema.Types.ObjectId, required: true, ref: 'Food' },
-            grams: { type: Number, required: true, min: 1 },
-            nutrients: {
+          food_id: { type: Schema.Types.ObjectId, required: true, ref: 'Food' },
+          grams: { type: Number, required: true, min: 1 },
+          nutrients: {
             calories: { type: Number, min: 0 },
             protein: { type: Number, min: 0 },
             fat: { type: Number, min: 0 },
@@ -452,7 +452,7 @@ app.get("/daily-nutrition", async (req: Request, res: Response) => {
 
     const pid = new Types.ObjectId(patient_id as string);
     const inputDate = new Date(date as string);
-    
+
     // Normalizar fecha (a medianoche)
     const startOfDay = new Date(inputDate);
     startOfDay.setHours(0, 0, 0, 0);
@@ -460,9 +460,9 @@ app.get("/daily-nutrition", async (req: Request, res: Response) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Buscar documento existente (usando el rango correcto)
-    let log = await DailyMealLog.findOne({ 
-      patient_id: pid, 
-      date: { $gte: startOfDay, $lte: endOfDay } 
+    let log = await DailyMealLog.findOne({
+      patient_id: pid,
+      date: { $gte: startOfDay, $lte: endOfDay }
     });
 
     if (!log) {
@@ -532,22 +532,30 @@ app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) =>
   }
 });
 
-// 📅 Obtener comidas del día actual para un paciente
+const { DateTime } = require('luxon');
+
 app.get('/weeklyplan/daily/:patient_id', async (req, res) => {
   try {
-    const patientId = req.params.patient_id;
+    let patientId = req.params.patient_id;
+    patientId = patientId.replace(/\.$/, '');
 
-    const plan = await WeeklyPlan.findOne({
-      patient_id: patientId,
-      'meals.day': new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
-    }).lean();
+    const plan = await WeeklyPlan.findOne({ patient_id: patientId })
+      .sort({ week_start: -1 })
+      .lean();
 
     if (!plan) {
       return res.status(404).json({ message: 'Plan no encontrado' });
     }
 
-    // Reemplazar food_id con información del alimento
-    const enrichedMeals = await Promise.all(plan.meals.map(async (meal) => {
+    // Obtener la fecha actual en la zona horaria de Tijuana
+    const todayInTijuana = DateTime.now().setZone('America/Tijuana');
+
+    const todayWeekDay = todayInTijuana.weekdayLong.toLowerCase(); 
+    // Retorna 'monday', 'tuesday', etc. (en inglés y lowercase, ideal para tu lógica)
+
+    const todayMeals = plan.meals.filter(meal => meal.day === todayWeekDay);
+
+    const enrichedMeals = await Promise.all(todayMeals.map(async (meal) => {
       const enrichedFoods = await Promise.all(meal.foods.map(async (item) => {
         const food = await Food.findById(item.food_id).lean();
         return {
@@ -562,12 +570,11 @@ app.get('/weeklyplan/daily/:patient_id', async (req, res) => {
       };
     }));
 
-    plan.meals = enrichedMeals;
+    res.json({ ...plan, meals: enrichedMeals });
 
-    res.json(plan);
   } catch (err) {
     console.error('Error al obtener el plan diario:', err);
-    res.status(500).json({ error: 'Error al obtener el plan diario' });
+    res.status(500).json({ message: 'Error interno del servidor' });
   }
 });
 
@@ -887,9 +894,9 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
       });
     }
 
-  function getTodayWeekday(): string {
+    function getTodayWeekday(): string {
       return new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-  }
+    }
 
     dailyLog.meals.push({
       day: getTodayWeekday(),
@@ -916,7 +923,7 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
 // obtener todos los registros de DailyMealLogs de un paciente (para estadísticas)
 app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
-  
+
   // Validar el ID del paciente
   if (!mongoose.Types.ObjectId.isValid(patient_id)) {
     return res.status(400).json({ error: 'ID de paciente no válido' });
@@ -925,7 +932,7 @@ app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) 
   try {
     // Convertir el ID a ObjectId
     const pid = new Types.ObjectId(patient_id);
-    
+
     // Obtener todos los logs del paciente, ordenados por fecha (más reciente primero)
     const logs = await DailyMealLog.find({ patient_id: pid })
       .sort({ date: -1 }) // Orden descendente por fecha
@@ -939,13 +946,13 @@ app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) 
     // Opcional: Calcular los totales si no están presentes
     const logsWithTotals = await Promise.all(logs.map(async log => {
       // Si ya tiene totales calculados, devolverlo tal cual
-      if (log.totalCalories !== undefined && 
-          log.totalProtein !== undefined && 
-          log.totalFat !== undefined && 
-          log.totalCarbs !== undefined) {
+      if (log.totalCalories !== undefined &&
+        log.totalProtein !== undefined &&
+        log.totalFat !== undefined &&
+        log.totalCarbs !== undefined) {
         return log;
       }
-      
+
       // Si no tiene totales, calcularlos
       const logDoc = new DailyMealLog(log);
       await calculateDailyTotals(logDoc);
@@ -976,14 +983,14 @@ app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) 
 // 📅 Endpoint unificado para obtener/crear registro diario
 app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
-  
+
   if (!mongoose.Types.ObjectId.isValid(patient_id)) {
     return res.status(400).json({ error: 'ID de paciente no válido' });
   }
 
   try {
     const pid = new Types.ObjectId(patient_id);
-    
+
     // 1. Definir rango del día actual
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -991,8 +998,8 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
     todayEnd.setHours(23, 59, 59, 999);
 
     // 2. Buscar registro existente
-    let log = await DailyMealLog.findOne({ 
-      patient_id: pid, 
+    let log = await DailyMealLog.findOne({
+      patient_id: pid,
       date: { $gte: todayStart, $lte: todayEnd }
     });
 
@@ -1008,7 +1015,7 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
         totalCarbs: 0,
         caloriesConsumed: 0
       });
-      
+
       await log.save();
     }
 
@@ -1035,9 +1042,9 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
 
   } catch (error: any) {
     console.error('❌ Error en /daily-meal-logs/today:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error al obtener/crear registro diario',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1096,5 +1103,128 @@ app.post("/DailyMealLogs/add-weekly-meal", async (req: Request, res: Response) =
   } catch (err) {
     console.error("Error en /DailyMealLogs/add-weekly-meal:", err);
     res.status(500).json({ error: "Error al añadir la comida al log diario" });
+  }
+});
+
+
+//
+// --------------------------------------------
+//
+
+// Reemplaza el endpoint '/dailymeallogs/add-food' en tu archivo index.ts con esta versión
+
+app.post('/dailymeallogs/add-food', async (req: Request, res: Response) => {
+  const { patient_id, type, time, food_data } = req.body;
+
+  if (!patient_id || !type || !time || !food_data || !food_data.food_name) {
+    return res.status(400).json({ error: "Faltan campos obligatorios." });
+  }
+
+  try {
+    // 👇 CORRECCIÓN FINAL: Creamos el objeto 'foodToSave' para que cumpla con tu schema 'Food'.
+    const foodToSave = {
+      name: food_data.food_name,
+      portion_size_g: food_data.serving_weight_grams || 100,
+      // 1. Se añade el campo 'category' requerido. Asignamos un valor por defecto.
+      category: food_data.category || 'general',
+      nutrients: {
+        // Campos que ya teníamos
+        energy_kcal: food_data.nf_calories || 0,
+        protein_g: food_data.nf_protein || 0,
+        carbohydrates_g: food_data.nf_total_carbohydrate || 0,
+        fat_g: food_data.nf_total_fat || 0,
+        // 2. Se añaden los campos de nutrientes requeridos que faltaban.
+        fiber_g: food_data.nf_dietary_fiber || 0,
+        sugar_g: food_data.nf_sugars || 0,
+      }
+    };
+
+    const savedFood = await Food.findOneAndUpdate(
+      { name: foodToSave.name, portion_size_g: foodToSave.portion_size_g },
+      { $set: foodToSave },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    // --- El resto de la lógica para DailyMealLogs (ya es correcta) ---
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let dailyLog = await DailyMealLog.findOne({
+      patient_id: new mongoose.Types.ObjectId(patient_id),
+      date: today
+    });
+
+    if (!dailyLog) {
+      dailyLog = new DailyMealLog({
+        patient_id: new mongoose.Types.ObjectId(patient_id),
+        date: today,
+        meals: [],
+        caloriesConsumed: 0,
+        proteinConsumed: 0,
+        fatConsumed: 0,
+        carbsConsumed: 0
+      });
+    }
+
+    function getTodayWeekday(): IMeal['day'] {
+      return new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as IMeal['day'];
+    }
+
+    dailyLog.meals.push({
+      day: getTodayWeekday(),
+      type,
+      time,
+      foods: [{
+        food_id: savedFood._id,
+        grams: Math.max(1, Math.round(savedFood.portion_size_g)),
+      }],
+      consumed: true,
+      notes: savedFood.name,
+    });
+
+    await calculateDailyTotals(dailyLog);
+    await dailyLog.save();
+
+    res.status(200).json({ message: "Alimento añadido al log diario", dailyLog });
+
+  } catch (err: any) {
+    console.error("❌ Error en /dailymeallogs/add-food:", err.code === 121 ? err.errInfo : err);
+    res.status(500).json({
+      error: "Error interno al añadir el alimento.",
+      details: err.message
+    });
+  }
+});
+
+
+
+// EDITAR PEFIL------------------------
+app.put('/patient/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const updateData = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'ID de paciente no válido' });
+  }
+
+  // No permitir la actualización de campos sensibles como el username o la contraseña desde aquí
+  delete updateData.username;
+  delete updateData.password;
+
+  try {
+    const updatedPatient = await Patient.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true } // new: true devuelve el documento actualizado
+    ).select('-password'); // Excluir la contraseña de la respuesta
+
+    if (!updatedPatient) {
+      return res.status(404).json({ message: 'Paciente no encontrado' });
+    }
+
+    res.json({ message: 'Perfil actualizado con éxito', patient: updatedPatient });
+  } catch (error) {
+    console.error('❌ Error al actualizar el perfil:', error);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar el perfil' });
   }
 });
