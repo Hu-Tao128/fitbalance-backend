@@ -215,6 +215,7 @@ interface IMealFood {
 }
 
 interface IMeal {
+  _id?: Types.ObjectId;
   day: string;
   type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   time: string;
@@ -497,12 +498,12 @@ app.get("/daily-nutrition", async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint para obtener el plan semanal más reciente
+// Endpoint to get the latest weekly plan
 app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(patient_id)) {
-    return res.status(400).json({ error: 'ID de paciente no válido' });
+    return res.status(400).json({ error: 'Invalid patient ID' });
   }
 
   try {
@@ -513,22 +514,23 @@ app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) =>
       .lean();
 
     if (!latestPlan) {
-      return res.status(404).json({
-        message: 'No se encontró ningún plan semanal.',
-        defaultValues: {
-          dailyCalories: 2000,
-          protein: 150,
-          fat: 70,
-          carbs: 250
-        }
+      // ✅ CORRECTED: Always return a 200 OK status.
+      // This indicates the request was successful, even if no plan was found.
+      return res.status(200).json({
+        message: 'No weekly plan found.',
+        // Provide default values so the frontend has something to work with.
+        dailyCalories: 2000,
+        protein: 150,
+        fat: 70,
+        carbs: 250
       });
     }
 
     return res.json(latestPlan);
 
   } catch (error) {
-    console.error('❌ Error en /weeklyplan/latest:', error);
-    return res.status(500).json({ error: 'Error al obtener el plan semanal más reciente' });
+    console.error('❌ Error in /weeklyplan/latest:', error);
+    return res.status(500).json({ error: 'Error getting the latest weekly plan' });
   }
 });
 
@@ -550,7 +552,7 @@ app.get('/weeklyplan/daily/:patient_id', async (req, res) => {
     // Obtener la fecha actual en la zona horaria de Tijuana
     const todayInTijuana = DateTime.now().setZone('America/Tijuana');
 
-    const todayWeekDay = todayInTijuana.weekdayLong.toLowerCase(); 
+    const todayWeekDay = todayInTijuana.weekdayLong.toLowerCase();
     // Retorna 'monday', 'tuesday', etc. (en inglés y lowercase, ideal para tu lógica)
 
     const todayMeals = plan.meals.filter(meal => meal.day === todayWeekDay);
@@ -980,7 +982,7 @@ app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) 
   }
 });
 
-// 📅 Endpoint unificado para obtener/crear registro diario
+// Endpoint unificado para obtener/crear registro diario
 app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
 
@@ -1003,11 +1005,11 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
       date: { $gte: todayStart, $lte: todayEnd }
     });
 
-    // 3. Si no existe, crear uno nuevo (como en /daily-nutrition)
+    // 3. Si no existe, crear uno nuevo 
     if (!log) {
       log = new DailyMealLog({
         patient_id: pid,
-        date: todayStart, // Fecha normalizada a medianoche
+        date: todayStart, // Fecha a medianoche
         meals: [],
         totalCalories: 0,
         totalProtein: 0,
@@ -1049,7 +1051,7 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
   }
 });
 
-// 👉 Nuevo endpoint: añade una comida del WeeklyPlan al DailyMealLog
+// Endpoint: añade una comida del WeeklyPlan al DailyMealLog
 app.post("/DailyMealLogs/add-weekly-meal", async (req: Request, res: Response) => {
   const { patient_id, meal } = req.body;
 
@@ -1111,8 +1113,6 @@ app.post("/DailyMealLogs/add-weekly-meal", async (req: Request, res: Response) =
 // --------------------------------------------
 //
 
-// Reemplaza el endpoint '/dailymeallogs/add-food' en tu archivo index.ts con esta versión
-
 app.post('/dailymeallogs/add-food', async (req: Request, res: Response) => {
   const { patient_id, type, time, food_data } = req.body;
 
@@ -1121,19 +1121,15 @@ app.post('/dailymeallogs/add-food', async (req: Request, res: Response) => {
   }
 
   try {
-    // 👇 CORRECCIÓN FINAL: Creamos el objeto 'foodToSave' para que cumpla con tu schema 'Food'.
     const foodToSave = {
       name: food_data.food_name,
       portion_size_g: food_data.serving_weight_grams || 100,
-      // 1. Se añade el campo 'category' requerido. Asignamos un valor por defecto.
       category: food_data.category || 'general',
       nutrients: {
-        // Campos que ya teníamos
         energy_kcal: food_data.nf_calories || 0,
         protein_g: food_data.nf_protein || 0,
         carbohydrates_g: food_data.nf_total_carbohydrate || 0,
         fat_g: food_data.nf_total_fat || 0,
-        // 2. Se añaden los campos de nutrientes requeridos que faltaban.
         fiber_g: food_data.nf_dietary_fiber || 0,
         sugar_g: food_data.nf_sugars || 0,
       }
@@ -1145,7 +1141,6 @@ app.post('/dailymeallogs/add-food', async (req: Request, res: Response) => {
       { new: true, upsert: true, runValidators: true }
     );
 
-    // --- El resto de la lógica para DailyMealLogs (ya es correcta) ---
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1226,5 +1221,294 @@ app.put('/patient/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('❌ Error al actualizar el perfil:', error);
     res.status(500).json({ error: 'Error interno del servidor al actualizar el perfil' });
+  }
+});
+
+
+// --------------------------
+
+//  CITAS ------------------------
+
+// -------------------
+
+interface IAppointment extends Document {
+  nutritionist_id: Types.ObjectId;
+  patient_id: Types.ObjectId;
+  appointment_date: Date;
+  appointment_time: string;
+  appointment_type?: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  notes?: string;
+}
+
+const AppointmentSchema = new Schema<IAppointment>({
+  nutritionist_id: { type: Schema.Types.ObjectId, required: true, ref: 'Nutritionist' }, // Asumiendo que tienes un modelo Nutritionist
+  patient_id: { type: Schema.Types.ObjectId, required: true, ref: 'Patient' },
+  appointment_date: { type: Date, required: true },
+  appointment_time: { type: String, required: true },
+  appointment_type: { type: String },
+  status: { type: String, enum: ['scheduled', 'completed', 'cancelled'], required: true },
+  notes: { type: String }
+}, {
+  collection: 'Appointments', // Nombre de tu colección en MongoDB
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+const Appointment = mongoose.model<IAppointment>('Appointment', AppointmentSchema);
+
+// ... (antes de tus endpoints de app.get, app.post, etc.)
+
+// index.ts (backend)
+
+app.get('/appointments/:patient_id', async (req: Request, res: Response) => {
+  const { patient_id } = req.params;
+
+  // Log en el servidor para ver qué ID llega
+  console.log(`Backend: Buscando citas para el patient_id: ${patient_id}`);
+
+  if (!mongoose.Types.ObjectId.isValid(patient_id)) {
+    console.log('Backend: El ID recibido no es válido.');
+    return res.status(400).json({ error: 'ID de paciente no válido' });
+  }
+
+  try {
+    const appointments = await Appointment.find({ patient_id: new Types.ObjectId(patient_id) });
+
+    // Log en el servidor para ver cuántas citas se encontraron
+    console.log(`Backend: Se encontraron ${appointments.length} citas.`);
+
+    // Devuelve 200 OK y un array (vacío o con datos). Esto es mejor que un 404.
+    // Así, la app sabrá que la consulta fue exitosa aunque no haya resultados.
+    res.status(200).json(appointments);
+
+  } catch (error) {
+    console.error('❌ Backend: Error en /appointments/:patient_id:', error);
+    res.status(500).json({ error: 'Error al obtener las citas' });
+  }
+});
+
+
+// 
+
+//  -------------------------- VER LOS DATOS DEL NUTRIOLOGO -------------------------
+
+
+// 👇 ADD THIS NEW MODEL FOR NUTRITIONISTS
+interface INutritionist extends Document {
+  _id: Types.ObjectId;
+  name: string;
+  lastName: string;
+  secondLastName?: string;
+  email: string;
+  password?: string;
+  city: string;
+  street: string;
+  neighborhood: string;
+  streetNumber: string;
+  licenseNumber?: string;
+  specialization?: string;
+  isActive: boolean;
+}
+
+const NutritionistSchema = new Schema<INutritionist>({
+  name: { type: String, required: true },
+  lastName: { type: String, required: true },
+  secondLastName: { type: String },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true, select: false },
+  city: { type: String, required: true },
+  street: { type: String, required: true },
+  neighborhood: { type: String, required: true },
+  streetNumber: { type: String, required: true },
+  licenseNumber: { type: String },
+  specialization: { type: String },
+  isActive: { type: Boolean, default: true },
+}, {
+  collection: 'Nutritionist',
+  timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' }
+});
+
+const Nutritionist = mongoose.model<INutritionist>('Nutritionist', NutritionistSchema);
+
+
+// 👇 ADD THIS NEW ENDPOINT
+// In your backend index.ts file...
+
+app.get('/nutritionist/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  // --- LOGS FOR DEBUGGING ---
+  console.log('--- PETICIÓN RECIBIDA EN /nutritionist/:id ---');
+  console.log(`1. ID Recibido del request: ${id}`);
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    console.log('2. El ID no es válido. Devolviendo error 400.');
+    return res.status(400).json({ error: 'Invalid nutritionist ID' });
+  }
+
+  try {
+    console.log('2. El ID es válido. Buscando en la base de datos...');
+    const nutritionist = await Nutritionist.findById(id).select('-password');
+
+    console.log('3. Resultado de la búsqueda:', nutritionist); // This is the most important log
+
+    if (!nutritionist) {
+      console.log('4. Nutriólogo no encontrado en la base de datos. Devolviendo error 404.');
+      return res.status(404).json({ message: 'Nutritionist not found in DB.' });
+    }
+
+    console.log('4. Nutriólogo ENCONTRADO. Devolviendo datos.');
+    res.json(nutritionist);
+
+  } catch (error) {
+    console.error('❌ Error en el bloque try/catch:', error);
+    return res.status(500).json({ error: 'Internal server error while fetching nutritionist.' });
+  }
+});
+
+
+// -------------------------
+
+// DASHBOARD DAILYMEAL MANAGE
+
+// ----------------------
+
+// In your backend index.ts file...
+
+// 1.A: Endpoint to get a specific DailyMealLog by date
+// En tu backend index.ts
+
+app.get('/daily-meal-logs/by-date', async (req: Request, res: Response) => {
+  const { patient_id, date } = req.query;
+
+  if (!patient_id || !date) {
+    return res.status(400).json({ error: 'patient_id and date are required query parameters.' });
+  }
+  if (!mongoose.Types.ObjectId.isValid(patient_id as string)) {
+    return res.status(400).json({ error: 'Invalid patient ID.' });
+  }
+
+  try {
+    const searchDate = new Date(date as string);
+    const startOfDay = new Date(searchDate.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(searchDate.setHours(23, 59, 59, 999));
+
+    const log = await DailyMealLog.findOne({
+      patient_id: new Types.ObjectId(patient_id as string),
+      date: { $gte: startOfDay, $lte: endOfDay }
+    }).populate('meals.foods.food_id', 'name');
+
+    if (!log) {
+      return res.json({
+        _id: null, // Para días sin registro, el _id es null (y el botón no aparecerá)
+        date: startOfDay,
+        meals: [],
+        totals: { calories: 0, protein: 0, fat: 0, carbs: 0 }
+      });
+    }
+
+    // ✅ ASEGÚRATE DE QUE TU RESPUESTA INCLUYA EL _id DEL LOG
+    res.json({
+      _id: log._id, // <-- ¡ESTA LÍNEA ES LA MÁS IMPORTANTE!
+      date: log.date,
+      meals: log.meals,
+      totals: {
+        calories: log.totalCalories || 0,
+        protein: log.totalProtein || 0,
+        fat: log.totalFat || 0,
+        carbs: log.totalCarbs || 0,
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error in /daily-meal-logs/by-date:', error);
+    res.status(500).json({ error: 'Server error fetching daily log.' });
+  }
+});
+
+// 1.B: Endpoint to delete a specific meal from a DailyMealLog
+
+
+app.get('/daily-meal-logs/by-date', async (req: Request, res: Response) => {
+  const { patient_id, date } = req.query;
+
+  if (!patient_id || !date) {
+    return res.status(400).json({ error: 'patient_id and date are required query parameters.' });
+  }
+  if (!mongoose.Types.ObjectId.isValid(patient_id as string)) {
+    return res.status(400).json({ error: 'Invalid patient ID.' });
+  }
+
+  try {
+    const searchDate = new Date(date as string);
+    const startOfDay = new Date(searchDate.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(searchDate.setHours(23, 59, 59, 999));
+
+    const log = await DailyMealLog.findOne({
+      patient_id: new Types.ObjectId(patient_id as string),
+      date: { $gte: startOfDay, $lte: endOfDay }
+    }).populate('meals.foods.food_id', 'name');
+
+    if (!log) {
+      return res.json({
+        _id: null,
+        date: startOfDay,
+        meals: [],
+        totals: { calories: 0, protein: 0, fat: 0, carbs: 0 }
+      });
+    }
+
+    // ✅ CORRECCIÓN FINAL: Se añade el _id del log a la respuesta.
+    res.json({
+      _id: log._id, // <-- ¡LA LÍNEA QUE FALTABA!
+      date: log.date,
+      meals: log.meals,
+      totals: {
+        calories: log.totalCalories || 0,
+        protein: log.totalProtein || 0,
+        fat: log.totalFat || 0,
+        carbs: log.totalCarbs || 0,
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error in /daily-meal-logs/by-date:', error);
+    res.status(500).json({ error: 'Server error fetching daily log.' });
+  }
+});
+
+// En tu backend index.ts
+
+app.delete('/daily-meal-logs/:logId/meals/:mealId', async (req: Request, res: Response) => {
+  const { logId, mealId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(logId) || !mongoose.Types.ObjectId.isValid(mealId)) {
+    return res.status(400).json({ error: 'Invalid Log ID or Meal ID.' });
+  }
+
+  try {
+    // Usamos el operador $pull de MongoDB para eliminar el subdocumento del arreglo.
+    // Esto es más directo y atómico que buscar, filtrar y guardar.
+    const updatedLog = await DailyMealLog.findByIdAndUpdate(
+      logId,
+      { $pull: { meals: { _id: mealId } } },
+      { new: true } // Esta opción hace que nos devuelva el documento ya actualizado.
+    );
+
+    if (!updatedLog) {
+      return res.status(404).json({ error: 'Daily log not found.' });
+    }
+
+    // Después de la eliminación, recalculamos los totales.
+    await calculateDailyTotals(updatedLog);
+
+    // Guardamos el documento con los nuevos totales.
+    const finalLog = await updatedLog.save();
+
+    res.json({ message: 'Meal deleted successfully.', dailyLog: finalLog });
+
+  } catch (error) {
+    console.error('❌ Error deleting meal:', error);
+    res.status(500).json({ error: 'Server error deleting meal.' });
   }
 });
