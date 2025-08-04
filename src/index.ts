@@ -898,53 +898,60 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
   }
 });
 
+export function parseLocalDate(dateInput: string | Date): Date {
+  // Si vino un Date, lo convertimos a ISO; si vino string, lo usamos tal cual
+  const iso = typeof dateInput === 'string'
+    ? dateInput
+    : dateInput.toISOString()
+
+  const [year, month, day] = iso.split('T')[0].split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 // obtener todos los registros de DailyMealLogs de un paciente (para estadísticas)
 app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
 
-  // Validar el ID del paciente
   if (!mongoose.Types.ObjectId.isValid(patient_id)) {
     return res.status(400).json({ error: 'ID de paciente no válido' });
   }
 
   try {
-    // Convertir el ID a ObjectId
     const pid = new Types.ObjectId(patient_id);
-
-    // Obtener todos los logs del paciente, ordenados por fecha (más reciente primero)
     const logs = await DailyMealLog.find({ patient_id: pid })
-      .sort({ date: -1 }) // Orden descendente por fecha
+      .sort({ date: -1 })
       .lean();
 
-    // Si no hay logs, devolver un array vacío
     if (!logs || logs.length === 0) {
       return res.json([]);
     }
 
-    // Opcional: Calcular los totales si no están presentes
+    // Asegúrate de que los totales estén calculados
     const logsWithTotals = await Promise.all(logs.map(async log => {
-      // Si ya tiene totales calculados, devolverlo tal cual
-      if (log.totalCalories !== undefined &&
-        log.totalProtein !== undefined &&
-        log.totalFat !== undefined &&
-        log.totalCarbs !== undefined) {
-        return log;
-      }
-
-      // Si no tiene totales, calcularlos
+      if (
+        log.totalCalories !== undefined &&
+        log.totalProtein  !== undefined &&
+        log.totalFat      !== undefined &&
+        log.totalCarbs    !== undefined
+      ) return log;
       const logDoc = new DailyMealLog(log);
       await calculateDailyTotals(logDoc);
       return logDoc.toObject();
     }));
 
-    // Formatear la respuesta para estadísticas
+    // Aquí usamos parseLocalDate para “borrar” el offset y que tu front reciba
+    // un Date a medianoche de tu zona (o una cadena YYYY-MM-DD si prefieres)
     const formattedLogs = logsWithTotals.map(log => ({
-      date: log.date,
+      // si quieres devolver Date:
+      date: parseLocalDate(log.date),
+      // — o si prefieres string 'YYYY-MM-DD':
+      // date: parseLocalDate(log.date).toISOString().split('T')[0],
+
       totals: {
         calories: log.totalCalories || 0,
-        protein: log.totalProtein || 0,
-        fat: log.totalFat || 0,
-        carbs: log.totalCarbs || 0,
+        protein:  log.totalProtein   || 0,
+        fat:      log.totalFat       || 0,
+        carbs:    log.totalCarbs     || 0,
       },
       meals: log.meals,
       notes: log.notes
