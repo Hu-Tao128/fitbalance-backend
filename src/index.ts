@@ -975,12 +975,9 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
 
   try {
     const pid = new Types.ObjectId(patient_id);
-
-    // 1. Definir rango del día actual
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart);
-    todayEnd.setHours(23, 59, 59, 999);
+    const nowTz     = DateTime.now().setZone('America/Tijuana');
+    const todayStart= nowTz.startOf('day').toJSDate();   // 00:00 Tijuana
+    const todayEnd  = nowTz.endOf('day').toJSDate();     // 23:59:59.999 Tijuana
 
     // 2. Buscar registro existente
     let log = await DailyMealLog.findOne({
@@ -992,7 +989,7 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
     if (!log) {
       log = new DailyMealLog({
         patient_id: pid,
-        date: todayStart, // Fecha a medianoche
+        date: todayStart,
         meals: [],
         totalCalories: 0,
         totalProtein: 0,
@@ -1000,12 +997,11 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
         totalCarbs: 0,
         caloriesConsumed: 0
       });
-
       await log.save();
     }
 
     // 4. Calcular totales si faltan (por si acaso)
-    if (!log.totalCalories) {
+    if (log.totalCalories === undefined) {
       await calculateDailyTotals(log);
       await log.save();
     }
@@ -1015,9 +1011,9 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
       date: log.date,
       totals: {
         calories: log.totalCalories || 0,
-        protein: log.totalProtein || 0,
-        fat: log.totalFat || 0,
-        carbs: log.totalCarbs || 0,
+        protein:  log.totalProtein   || 0,
+        fat:      log.totalFat       || 0,
+        carbs:    log.totalCarbs     || 0,
       },
       meals: log.meals,
       notes: log.notes
