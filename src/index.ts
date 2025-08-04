@@ -93,7 +93,6 @@ interface IPatient {
 const Patient = mongoose.model<IPatient>(
   'Patient',
   new mongoose.Schema({
-    _id: { type: String, required: true },
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     name: { type: String, required: true },
@@ -315,26 +314,22 @@ async function getFatSecretToken(): Promise<string> {
 }
 
 // 🔎 Función para buscar en FatSecret
-async function searchFatSecretByText(query: string) {
-  const accessToken = await getFatSecretToken();
-
-  const response = await axios.post(
-    'https://platform.fatsecret.com/rest/server.api',
-    new URLSearchParams({
-      method: 'foods.search',
-      search_expression: query,
-      format: 'json',
-      max_results: '10'
-    }),
+// Nueva función de búsqueda usando el endpoint 'instant' de Nutritionix
+async function searchNutritionixForList(query: string) {
+  const response = await axios.get(
+    'https://trackapi.nutritionix.com/v2/search/instant',
     {
+      params: {
+        query: query
+      },
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
+        'x-app-id': NUTRITIONIX_APP_ID,
+        'x-app-key': NUTRITIONIX_APP_KEY,
+      },
     }
   );
-
-  return response.data;
+  // La respuesta de esta API tiene resultados comunes ('common') y de marcas ('branded')
+  return [...(response.data.common || []), ...(response.data.branded || [])];
 }
 
 // 🧠 Ruta combinada de búsqueda nutricional
@@ -346,33 +341,14 @@ app.post('/search-food', async (req: Request, res: Response) => {
   }
 
   try {
-    const nutritionixResponse = await axios.post(
-      'https://trackapi.nutritionix.com/v2/natural/nutrients',
-      { query },
-      {
-        headers: {
-          'x-app-id': NUTRITIONIX_APP_ID,
-          'x-app-key': NUTRITIONIX_APP_KEY,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    // Llama a la nueva función de búsqueda de Nutritionix
+    const foodList = await searchNutritionixForList(query);
 
-    const items = nutritionixResponse.data.foods;
-    if (items && items.length > 0) {
+    if (foodList && foodList.length > 0) {
       return res.json({
         source: 'nutritionix',
-        results: items
-      });
-    }
-
-    const fatSecretData = await searchFatSecretByText(query);
-    const foods = fatSecretData?.foods?.food;
-
-    if (foods && foods.length > 0) {
-      return res.json({
-        source: 'fatsecret',
-        results: foods
+        // Devuelve solo los primeros 3 resultados
+        results: foodList.slice(0, 3)
       });
     }
 
@@ -1510,5 +1486,46 @@ app.delete('/daily-meal-logs/:logId/meals/:mealId', async (req: Request, res: Re
   } catch (error) {
     console.error('❌ Error deleting meal:', error);
     res.status(500).json({ error: 'Server error deleting meal.' });
+  }
+});
+
+
+// 
+
+// CAMBIAR PASSWORD -----------FDFDFFDFJHDSIOFNIOUD
+
+//
+
+// En tu backend index.ts
+
+app.put('/patients/change-password', async (req: Request, res: Response) => {
+  const { patient_id, currentPassword, newPassword } = req.body;
+
+  if (!patient_id || !currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Todos los campos son obligatorios.' });
+  }
+
+  try {
+    // ✅ Volvemos a usar findById, que ahora funcionará correctamente
+    const patient = await Patient.findById(patient_id).select('+password');
+
+    if (!patient) {
+      return res.status(404).json({ message: 'Usuario no encontrado.' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, patient.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'La contraseña actual es incorrecta.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    patient.password = await bcrypt.hash(newPassword, salt);
+    await patient.save();
+
+    res.json({ message: 'Contraseña actualizada con éxito.' });
+
+  } catch (error) {
+    console.error('❌ Error al cambiar la contraseña:', error);
+    res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
