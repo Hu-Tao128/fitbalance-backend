@@ -880,7 +880,7 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
     });
     if (!dailyLog) {
       dailyLog = new DailyMealLog({
-        patient_id,
+        patient_id: new Types.ObjectId(patient_id),
         date: todayStart,
         meals: [],
         totalCalories: 0,
@@ -1030,6 +1030,65 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
       error: 'Error al obtener/crear registro diario',
       details: error.message
     });
+  }
+});
+
+// 📌 POST /daily-meal-logs/add-weight-meal
+app.post('/daily-meal-logs/add-weight-meal', async (req: Request, res: Response) => {
+  const { patient_id, weight, meal } = req.body;
+  if (!patient_id || weight == null || !meal) {
+    return res.status(400).json({ error: 'patient_id, weight y meal son obligatorios.' });
+  }
+  try {
+    // 1) Rango de hoy en Tijuana
+    const start = todayStartInTijuana();
+    const end   = todayEndInTijuana();
+
+    // 2) Buscar o crear DailyMealLog
+    let log = await DailyMealLog.findOne({
+      patient_id: new Types.ObjectId(patient_id),
+      date: { $gte: start, $lte: end }
+    });
+    if (!log) {
+      log = new DailyMealLog({
+        patient_id,
+        date: start,
+        meals: [],
+        totalCalories: 0,
+        totalProtein: 0,
+        totalFat: 0,
+        totalCarbs: 0,
+        caloriesConsumed: 0,
+      });
+    }
+
+    // 3) Convertir la “meal” de cliente en subdocumento
+    //    Ajustamos las porciones en función del peso total medido
+    const originalTotal = meal.foods.reduce((sum: number, f: any) => sum + f.grams, 0);
+    const ratio = weight / (originalTotal || 1);
+
+    const foods = meal.foods.map((f: any) => ({
+      food_id: new Types.ObjectId(f.food_id),
+      grams: Math.round(f.grams * ratio),
+    }));
+
+    log.meals.push({
+      day: nowInTijuana().weekdayLong!.toLowerCase(),
+      type: meal.type,
+      time: meal.time,
+      foods,
+      consumed: true,
+      notes: `Porción pesada: ${weight}g`,
+    });
+
+    // 4) Recalcular totales y guardar
+    await calculateDailyTotals(log);
+    await log.save();
+
+    return res.json({ message: 'Peso añadido al log diario', dailyLog: log });
+  } catch (err) {
+    console.error('❌ Error en add-weight-meal:', err);
+    return res.status(500).json({ error: 'Error al añadir el peso al log diario.' });
   }
 });
 
