@@ -1363,7 +1363,6 @@ app.get('/nutritionist/:id', async (req: Request, res: Response) => {
 
 app.get('/daily-meal-logs/by-date', async (req: Request, res: Response) => {
   const { patient_id, date } = req.query;
-
   if (!patient_id || !date) {
     return res.status(400).json({ error: 'patient_id and date are required query parameters.' });
   }
@@ -1372,10 +1371,12 @@ app.get('/daily-meal-logs/by-date', async (req: Request, res: Response) => {
   }
 
   try {
-    const searchDate = new Date(date as string);
-    const startOfDay = new Date(searchDate.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(searchDate.setHours(23, 59, 59, 999));
+    // 1) Parsear la fecha en zona Tijuana y sacar inicio/fin de día
+    const dt = DateTime.fromISO(date as string, { zone: 'America/Tijuana' });
+    const startOfDay = dt.startOf('day').toJSDate();
+    const endOfDay   = dt.endOf('day').toJSDate();
 
+    // 2) Buscar el log dentro de ese rango
     const log = await DailyMealLog.findOne({
       patient_id: new Types.ObjectId(patient_id as string),
       date: { $gte: startOfDay, $lte: endOfDay }
@@ -1383,26 +1384,25 @@ app.get('/daily-meal-logs/by-date', async (req: Request, res: Response) => {
 
     if (!log) {
       return res.json({
-        _id: null, // Para días sin registro, el _id es null (y el botón no aparecerá)
-        date: startOfDay,
-        meals: [],
+        _id:    null,
+        date:   startOfDay,
+        meals:  [],
         totals: { calories: 0, protein: 0, fat: 0, carbs: 0 }
       });
     }
 
-    // ✅ ASEGÚRATE DE QUE TU RESPUESTA INCLUYA EL _id DEL LOG
+    // 3) Devolver resultado con _id
     res.json({
-      _id: log._id, // <-- ¡ESTA LÍNEA ES LA MÁS IMPORTANTE!
-      date: log.date,
-      meals: log.meals,
+      _id:    log._id,
+      date:   log.date,
+      meals:  log.meals,
       totals: {
         calories: log.totalCalories || 0,
-        protein: log.totalProtein || 0,
-        fat: log.totalFat || 0,
-        carbs: log.totalCarbs || 0,
+        protein:  log.totalProtein   || 0,
+        fat:      log.totalFat       || 0,
+        carbs:    log.totalCarbs     || 0,
       }
     });
-
   } catch (error) {
     console.error('❌ Error in /daily-meal-logs/by-date:', error);
     res.status(500).json({ error: 'Server error fetching daily log.' });
