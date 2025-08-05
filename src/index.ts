@@ -1044,7 +1044,7 @@ app.post("/DailyMealLogs/add-weekly-meal", async (req: Request, res: Response) =
   }
 
   try {
-    const today = new Date();
+    const today = todayStartInTijuana();
     today.setHours(0, 0, 0, 0);
 
     // Buscar o crear el log diario
@@ -1125,7 +1125,7 @@ app.post('/dailymeallogs/add-food', async (req: Request, res: Response) => {
       { new: true, upsert: true, runValidators: true }
     );
 
-    const today = new Date();
+    const today = todayStartInTijuana();
     today.setHours(0, 0, 0, 0);
 
     let dailyLog = await DailyMealLog.findOne({
