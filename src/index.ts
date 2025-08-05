@@ -7,6 +7,19 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { DateTime } from 'luxon';
+
+function nowInTijuana() {
+  return DateTime.now().setZone('America/Tijuana');
+}
+
+function todayStartInTijuana() {
+  return nowInTijuana().startOf('day').toJSDate();
+}
+
+function todayEndInTijuana() {
+  return nowInTijuana().endOf('day').toJSDate();
+}
 
 const SALT_ROUNDS = 10;
 
@@ -411,11 +424,14 @@ async function calculateDailyTotals(dailyLog: IDailyMealLog) {
     }
   }
 
+  const roundedCalories = Math.round(totalCalories || 0);
+  
   // Actualizar totales
   dailyLog.totalCalories = Math.round(totalCalories || 0);
   dailyLog.totalProtein = Math.round(totalProtein || 0);
   dailyLog.totalFat = Math.round(totalFat || 0);
   dailyLog.totalCarbs = Math.round(totalCarbs || 0);
+  dailyLog.caloriesConsumed = dailyLog.totalCalories;
 
 }
 
@@ -510,8 +526,6 @@ app.get('/weeklyplan/latest/:patient_id', async (req: Request, res: Response) =>
   }
 });
 
-const { DateTime } = require('luxon');
-
 app.get('/weeklyplan/daily/:patient_id', async (req, res) => {
   try {
     let patientId = req.params.patient_id;
@@ -526,9 +540,11 @@ app.get('/weeklyplan/daily/:patient_id', async (req, res) => {
     }
 
     // Obtener la fecha actual en la zona horaria de Tijuana
-    const todayInTijuana = DateTime.now().setZone('America/Tijuana');
+    const todayInTijuana = nowInTijuana();
+    const todayWeekDay = todayInTijuana.weekdayLong!.toLowerCase();
+    console.log(todayInTijuana, todayWeekDay);
+    const todayDate = todayInTijuana.startOf('day').toJSDate(); // Si luego la necesitas como Date nativo
 
-    const todayWeekDay = todayInTijuana.weekdayLong.toLowerCase();
     // Retorna 'monday', 'tuesday', etc. (en inglés y lowercase, ideal para tu lógica)
 
     const todayMeals = plan.meals.filter(meal => meal.day === todayWeekDay);
@@ -898,16 +914,6 @@ app.post("/DailyMealLogs/add-custom-meal", async (req: Request, res: Response) =
   }
 });
 
-export function parseLocalDate(dateInput: string | Date): Date {
-  // Si vino un Date, lo convertimos a ISO; si vino string, lo usamos tal cual
-  const iso = typeof dateInput === 'string'
-    ? dateInput
-    : dateInput.toISOString()
-
-  const [year, month, day] = iso.split('T')[0].split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
-
 // obtener todos los registros de DailyMealLogs de un paciente (para estadísticas)
 app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) => {
   const { patient_id } = req.params;
@@ -943,8 +949,7 @@ app.get('/daily-meal-logs/all/:patient_id', async (req: Request, res: Response) 
     // un Date a medianoche de tu zona (o una cadena YYYY-MM-DD si prefieres)
     const formattedLogs = logsWithTotals.map(log => ({
       // si quieres devolver Date:
-      date: parseLocalDate(log.date),
-      // — o si prefieres string 'YYYY-MM-DD':
+      date: DateTime.fromJSDate(log.date).setZone('America/Tijuana').toISODate(),      // — o si prefieres string 'YYYY-MM-DD':
       // date: parseLocalDate(log.date).toISOString().split('T')[0],
 
       totals: {
