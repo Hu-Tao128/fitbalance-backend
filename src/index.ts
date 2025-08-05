@@ -1033,25 +1033,79 @@ app.get('/daily-meal-logs/today/:patient_id', async (req: Request, res: Response
   }
 });
 
-// 📌 POST /daily-meal-logs/add-weight-meal
-app.post('/daily-meal-logs/add-weight-meal', async (req: Request, res: Response) => {
-  const { patient_id, weight, meal } = req.body;
-  if (!patient_id || weight == null || !meal) {
-    return res.status(400).json({ error: 'patient_id, weight y meal son obligatorios.' });
+// POST /daily-meal-logs/add-weekly-meal
+app.post('/daily-meal-logs/add-weekly-meal', async (req, res) => {
+  const { patient_id, meal, weight } = req.body;
+  if (!patient_id || !meal) {
+    return res.status(400).json({ error: 'patient_id y meal son obligatorios.' });
   }
+
   try {
     // 1) Rango de hoy en Tijuana
     const start = todayStartInTijuana();
     const end   = todayEndInTijuana();
 
-    // 2) Buscar o crear DailyMealLog
+    // 2) Busca o crea el log de hoy
+    let log = await DailyMealLog.findOne({
+      patient_id: new Types.ObjectId(patient_id),
+      date: { $gte: start, $lte: end }
+    });
+    if (!log) {
+      log = new DailyMealLog({ patient_id, date: start, meals: [], totalCalories: 0, totalProtein: 0, totalFat: 0, totalCarbs: 0, caloriesConsumed: 0 });
+    }
+
+    // 3) Calcula el ratio si llega weight
+    const originalTotal = meal.foods.reduce((s: number, f: any) => s + f.grams, 0) || 1;
+    const ratio = weight != null ? weight / originalTotal : 1;
+
+    // 4) Prepara subdocumento
+    const foods = meal.foods.map((f: any) => ({
+      food_id: new Types.ObjectId(f.food_id),
+      grams:   Math.round(f.grams * ratio),
+    }));
+
+    log.meals.push({
+      day: nowInTijuana().weekdayLong!.toLowerCase(),
+      type: meal.type,
+      time: meal.time,
+      foods,
+      consumed: true,
+      notes: weight != null
+        ? `Porción pesada: ${Math.round(ratio * originalTotal)}g`
+        : `Porción recomendada`,
+    });
+
+    // 5) Recalcula totales y guarda
+    await calculateDailyTotals(log);
+    await log.save();
+
+    return res.json({ message: 'Comida añadida al log diario', dailyLog: log });
+  } catch (err) {
+    console.error('Error en add-weekly-meal:', err);
+    return res.status(500).json({ error: 'Error al añadir la comida.' });
+  }
+});
+
+// 📌 POST /daily-meal-logs/add-meal
+app.post('/daily-meal-logs/add-meal', async (req: Request, res: Response) => {
+  const { patient_id, meal, weight } = req.body;
+  if (!patient_id || !meal) {
+    return res.status(400).json({ error: 'patient_id y meal son obligatorios.' });
+  }
+
+  try {
+    // 1) Rango de hoy en Tijuana
+    const start = todayStartInTijuana();
+    const end   = todayEndInTijuana();
+
+    // 2) Busca o crea el log de hoy
     let log = await DailyMealLog.findOne({
       patient_id: new Types.ObjectId(patient_id),
       date: { $gte: start, $lte: end }
     });
     if (!log) {
       log = new DailyMealLog({
-        patient_id,
+        patient_id: new Types.ObjectId(patient_id),
         date: start,
         meals: [],
         totalCalories: 0,
@@ -1062,36 +1116,37 @@ app.post('/daily-meal-logs/add-weight-meal', async (req: Request, res: Response)
       });
     }
 
-    // 3) Convertir la “meal” de cliente en subdocumento
-    //    Ajustamos las porciones en función del peso total medido
-    const originalTotal = meal.foods.reduce((sum: number, f: any) => sum + f.grams, 0);
-    const ratio = weight / (originalTotal || 1);
+    // 3) Calcula el ratio si llega weight
+    const originalTotal = meal.foods.reduce((s: number, f: any) => s + f.grams, 0) || 1;
+    const ratio = weight != null ? weight / originalTotal : 1;
 
+    // 4) Prepara subdocumento
     const foods = meal.foods.map((f: any) => ({
       food_id: new Types.ObjectId(f.food_id),
-      grams: Math.round(f.grams * ratio),
+      grams:   Math.round(f.grams * ratio),
     }));
 
     log.meals.push({
-      day: nowInTijuana().weekdayLong!.toLowerCase(),
-      type: meal.type,
-      time: meal.time,
+      day:   nowInTijuana().weekdayLong!.toLowerCase(),
+      type:  meal.type,
+      time:  meal.time,
       foods,
       consumed: true,
-      notes: `Porción pesada: ${weight}g`,
+      notes: weight != null
+        ? `Porción pesada: ${Math.round(weight)}g`
+        : `Porción recomendada`,
     });
 
-    // 4) Recalcular totales y guardar
+    // 5) Recalcula totales y guarda
     await calculateDailyTotals(log);
     await log.save();
 
-    return res.json({ message: 'Peso añadido al log diario', dailyLog: log });
+    return res.json({ message: 'Comida añadida al log diario', dailyLog: log });
   } catch (err) {
-    console.error('❌ Error en add-weight-meal:', err);
-    return res.status(500).json({ error: 'Error al añadir el peso al log diario.' });
+    console.error('Error en add-meal:', err);
+    return res.status(500).json({ error: 'Error al añadir la comida.' });
   }
 });
-
 
 // Endpoint: añade una comida del WeeklyPlan al DailyMealLog
 app.post("/DailyMealLogs/add-weekly-meal", async (req: Request, res: Response) => {
