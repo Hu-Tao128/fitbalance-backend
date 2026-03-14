@@ -1,7 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IPatient extends Document {
-  _id: string;
   username: string;
   password: string;
   name: string;

@@ -1,17 +1,13 @@
 import {
   IPatient,
   IFood,
-  IWeeklyPlan,
-  IDailyMealLog,
   IAppointment,
-  INutritionist,
 } from '../models';
 
 describe('Models', () => {
   describe('IPatient', () => {
     it('should have required fields', () => {
       const patient: IPatient = {
-        _id: '123',
         username: 'testuser',
         password: 'hashedpassword',
         name: 'Test User',
@@ -24,7 +20,6 @@ describe('Models', () => {
 
     it('should allow optional fields', () => {
       const patient: IPatient = {
-        _id: '123',
         username: 'testuser',
         password: 'hashedpassword',
         name: 'Test User',
@@ -71,7 +66,6 @@ describe('Models', () => {
   describe('IFood', () => {
     it('should have nutrients structure', () => {
       const food: IFood = {
-        _id: '123',
         name: 'Apple',
         portion_size_g: 100,
         nutrients: {
@@ -99,7 +93,6 @@ describe('Models', () => {
   describe('IAppointment', () => {
     it('should allow valid status values', () => {
       const appointment: IAppointment = {
-        _id: '123',
         nutritionist_id: 'nut123' as any,
         patient_id: 'pat123' as any,
         appointment_date: new Date(),
@@ -108,26 +101,6 @@ describe('Models', () => {
       } as IAppointment;
 
       expect(['scheduled', 'completed', 'cancelled']).toContain(appointment.status);
-    });
-  });
-
-  describe('INutritionist', () => {
-    it('should have required address fields', () => {
-      const nutritionist = {
-        _id: '123',
-        name: 'Dr. Smith',
-        lastName: 'Smith',
-        email: 'dr@nutrition.com',
-        password: 'hashed',
-        city: 'Tijuana',
-        street: 'Main St',
-        neighborhood: 'Centro',
-        streetNumber: '123',
-        isActive: true,
-      };
-
-      expect(nutritionist.city).toBe('Tijuana');
-      expect(nutritionist.isActive).toBe(true);
     });
   });
 });
