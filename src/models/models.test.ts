@@ -1,3 +1,9 @@
+import {
+  IPatient,
+  IFood,
+  IAppointment,
+} from '../models';
+
 describe('Models', () => {
   describe('IPatient', () => {
     it('should have required fields', () => {

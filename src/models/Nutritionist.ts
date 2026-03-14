@@ -1,7 +1,6 @@
-import mongoose, { Document, Schema, Types } from 'mongoose';
+import mongoose, { Document, Schema } from 'mongoose';
 
 export interface INutritionist extends Document {
-  _id: Types.ObjectId;
   name: string;
   lastName: string;
   secondLastName?: string;
