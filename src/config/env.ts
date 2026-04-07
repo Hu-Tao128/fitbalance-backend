@@ -15,3 +15,4 @@ export const NUTRITIONIX_APP_ID = getEnv('NUTRITIONIX_APP_ID');
 export const NUTRITIONIX_APP_KEY = getEnv('NUTRITIONIX_APP_KEY');
 
 export const SALT_ROUNDS = 10;
+export const JWT_SECRET: string = getEnv('JWT_SECRET');

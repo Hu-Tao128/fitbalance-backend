@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import { Patient, PasswordResetToken } from '../models';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { SALT_ROUNDS } from '../config/env';
+import { generateToken } from '../utils/jwt';
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { username, password } = req.body;
@@ -31,8 +32,19 @@ export async function login(req: Request, res: Response): Promise<void> {
 
     const { password: _, ...patientData } = patient.toObject();
 
+    // Generate JWT token
+    const token = generateToken(
+      {
+        id: patient._id,
+        username: patient.username,
+        email: patient.email,
+      },
+      '24h'
+    ); // Token expires in 24 hours
+
     res.json({
       message: 'Login exitoso',
+      token,
       patient: patientData,
     });
   } catch (err) {

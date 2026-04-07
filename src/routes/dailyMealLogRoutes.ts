@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { dailyMealLogController } from '../controllers';
+import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// Apply authentication middleware to all routes in this router
+router.use(authenticateToken);
 
 router.get('/daily-nutrition', dailyMealLogController.getDailyNutrition);
 router.get('/daily-meal-logs/today/:patient_id', dailyMealLogController.getTodayMealLog);
