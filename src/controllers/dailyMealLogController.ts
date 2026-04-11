@@ -425,3 +425,89 @@ export async function deleteMeal(req: Request, res: Response): Promise<void> {
     res.status(500).json({ error: 'Server error deleting meal.' });
   }
 }
+
+export async function addFoodFromScanner(req: Request, res: Response): Promise<void> {
+  const { patient_id, type, time, food_data } = req.body;
+
+  if (!patient_id || !type || !time || !food_data || !food_data.food_name) {
+    res.status(400).json({ error: 'Faltan campos obligatorios.' });
+    return;
+  }
+
+  try {
+    const foodToSave = {
+      name: food_data.food_name,
+      portion_size_g: food_data.serving_weight_grams || 100,
+      category: food_data.category || 'general',
+      nutrients: {
+        energy_kj: 0,
+        energy_kcal: food_data.nf_calories || 0,
+        fat_g: food_data.nf_total_fat || 0,
+        saturated_fat_g: 0,
+        monounsaturated_fat_g: 0,
+        polyunsaturated_fat_g: 0,
+        carbohydrates_g: food_data.nf_total_carbohydrate || 0,
+        sugar_g: food_data.nf_sugars || 0,
+        fiber_g: food_data.nf_dietary_fiber || 0,
+        protein_g: food_data.nf_protein || 0,
+        salt_g: 0,
+        cholesterol_mg: 0,
+        potassium_mg: 0,
+      },
+    };
+
+    const savedFood = await Food.findOneAndUpdate(
+      { name: foodToSave.name, portion_size_g: foodToSave.portion_size_g },
+      { $set: foodToSave },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    const today = todayStartInTijuana();
+    today.setHours(0, 0, 0, 0);
+
+    let dailyLog = await DailyMealLog.findOne({
+      patient_id: new Types.ObjectId(patient_id),
+      date: today,
+    });
+
+    if (!dailyLog) {
+      dailyLog = new DailyMealLog({
+        patient_id: new Types.ObjectId(patient_id),
+        date: today,
+        meals: [],
+        totalCalories: 0,
+        totalProtein: 0,
+        totalFat: 0,
+        totalCarbs: 0,
+        caloriesConsumed: 0,
+      });
+    }
+
+    const weekday = nowInTijuana().weekdayLong!.toLowerCase();
+
+    dailyLog.meals.push({
+      day: weekday,
+      type,
+      time,
+      foods: [
+        {
+          food_id: savedFood._id,
+          grams: Math.max(1, Math.round(savedFood.portion_size_g)),
+        },
+      ],
+      consumed: true,
+      notes: savedFood.name,
+    });
+
+    await calculateDailyTotals(dailyLog);
+    await dailyLog.save();
+
+    res.status(200).json({ message: 'Alimento añadido al log diario', dailyLog });
+  } catch (err: any) {
+    console.error('Error en /dailymeallogs/add-food:', err);
+    res.status(500).json({
+      error: 'Error interno al añadir el alimento.',
+      details: err.message,
+    });
+  }
+}
