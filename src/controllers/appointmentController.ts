@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import { Appointment } from '../models';
 
 export async function getPatientAppointments(req: Request, res: Response): Promise<void> {
-  const { patient_id } = req.params;
+  const patient_id = req.params.patient_id as string;
 
   if (!Types.ObjectId.isValid(patient_id)) {
     res.status(400).json({ error: 'ID de paciente no valido' });

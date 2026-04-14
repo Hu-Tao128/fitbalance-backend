@@ -6,6 +6,6 @@ const router = Router();
 
 router.use(authenticateToken);
 
-router.get('/nutritionist/:id', nutritionistController.getNutritionist);
+router.get('/nutritionist/:id', nutritionistController.getNutritionistById);
 
 export default router;

@@ -63,7 +63,7 @@ export async function getDailyNutrition(req: Request, res: Response): Promise<vo
 }
 
 export async function getTodayMealLog(req: Request, res: Response): Promise<void> {
-  const { patient_id } = req.params;
+  const patient_id = req.params.patient_id as string;
 
   if (!Types.ObjectId.isValid(patient_id)) {
     res.status(400).json({ error: 'ID de paciente no valido' });
@@ -119,7 +119,7 @@ export async function getTodayMealLog(req: Request, res: Response): Promise<void
 }
 
 export async function getAllMealLogs(req: Request, res: Response): Promise<void> {
-  const { patient_id } = req.params;
+  const patient_id = req.params.patient_id as string;
 
   if (!Types.ObjectId.isValid(patient_id)) {
     res.status(400).json({ error: 'ID de paciente no valido' });
@@ -397,7 +397,8 @@ export async function addCustomMeal(req: Request, res: Response): Promise<void> 
 }
 
 export async function deleteMeal(req: Request, res: Response): Promise<void> {
-  const { logId, mealId } = req.params;
+  const logId = req.params.logId as string;
+  const mealId = req.params.mealId as string;
 
   if (!Types.ObjectId.isValid(logId) || !Types.ObjectId.isValid(mealId)) {
     res.status(400).json({ error: 'Invalid Log ID or Meal ID.' });

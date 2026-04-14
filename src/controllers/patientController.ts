@@ -20,7 +20,7 @@ export async function getUserByUsername(req: Request, res: Response): Promise<vo
 }
 
 export async function updatePatient(req: Request, res: Response): Promise<void> {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const updateData = req.body;
 
   if (!Types.ObjectId.isValid(id)) {

@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { Nutritionist } from '../models';
 
-export async function getNutritionist(req: Request, res: Response): Promise<void> {
-  const { id } = req.params;
+export async function getNutritionistById(req: Request, res: Response): Promise<void> {
+  const id = req.params.id as string;
 
   if (!Types.ObjectId.isValid(id)) {
     res.status(400).json({ error: 'Invalid nutritionist ID' });

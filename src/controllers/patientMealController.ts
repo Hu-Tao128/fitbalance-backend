@@ -38,7 +38,7 @@ export async function createPatientMeal(req: Request, res: Response): Promise<vo
 }
 
 export async function getPatientMeals(req: Request, res: Response): Promise<void> {
-  const { patient_id } = req.params;
+  const patient_id = req.params.patient_id as string;
 
   if (!Types.ObjectId.isValid(patient_id)) {
     res.status(400).json({ error: 'ID de paciente no valido.' });
@@ -59,7 +59,7 @@ export async function getPatientMeals(req: Request, res: Response): Promise<void
 }
 
 export async function updatePatientMeal(req: Request, res: Response): Promise<void> {
-  const { meal_id } = req.params;
+  const meal_id = req.params.meal_id as string;
   const { name, ingredients, nutrients, instructions } = req.body;
 
   if (!Types.ObjectId.isValid(meal_id)) {
@@ -103,7 +103,7 @@ export async function updatePatientMeal(req: Request, res: Response): Promise<vo
 }
 
 export async function deletePatientMeal(req: Request, res: Response): Promise<void> {
-  const { meal_id } = req.params;
+  const meal_id = req.params.meal_id as string;
 
   if (!Types.ObjectId.isValid(meal_id)) {
     res.status(400).json({ error: 'ID de comida no valido.' });

@@ -4,7 +4,7 @@ import { WeeklyPlan, Food } from '../models';
 import { nowInTijuana } from '../services/dateService';
 
 export async function getLatestWeeklyPlan(req: Request, res: Response): Promise<void> {
-  const { patient_id } = req.params;
+  const patient_id = req.params.patient_id as string;
 
   if (!Types.ObjectId.isValid(patient_id)) {
     res.status(400).json({ error: 'Invalid patient ID' });
@@ -37,7 +37,7 @@ export async function getLatestWeeklyPlan(req: Request, res: Response): Promise<
 }
 
 export async function getDailyPlan(req: Request, res: Response): Promise<void> {
-  let { patient_id } = req.params;
+  let patient_id = req.params.patient_id as string;
   patient_id = patient_id.replace(/\.$/, '');
 
   try {
