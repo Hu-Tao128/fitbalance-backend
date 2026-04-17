@@ -18,6 +18,9 @@ export interface IPatient extends Document {
   last_consultation?: Date | null;
   nutritionist_id?: string;
   isActive?: boolean;
+  resetCode?: string | null;
+  resetCodeExpires?: Date | null;
+  lastResetRequest?: Date | null;
 }
 
 const PatientSchema = new Schema<IPatient>(
@@ -39,6 +42,9 @@ const PatientSchema = new Schema<IPatient>(
     last_consultation: { type: Date, default: null },
     nutritionist_id: { type: String },
     isActive: { type: Boolean, default: true },
+    resetCode: { type: String, default: null, select: false },
+    resetCodeExpires: { type: Date, default: null, select: false },
+    lastResetRequest: { type: Date, default: null, select: false },
   },
   { collection: 'Patients' }
 );
