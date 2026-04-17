@@ -8,7 +8,7 @@
 
 ### Header de Autorización
 
-Todos los endpoints protegidos (excepto `/login` y `/send-reset-code`) requieren un token JWT en el header:
+Todos los endpoints protegidos (excepto `/login`, `/send-reset-code`, `/verify-reset-code` y `/reset-password`) requieren un token JWT en el header:
 
 ```
 Authorization: Bearer <token_jwt>
@@ -84,6 +84,53 @@ Enviar código de recuperación de contraseña al correo.
 ```json
 {
   "message": "Codigo de recuperacion enviado al correo del paciente."
+}
+```
+
+---
+
+#### POST /verify-reset-code
+
+Verificar si el código de recuperación es válido.
+
+**Body:**
+
+```json
+{
+  "email": "string",
+  "code": "string"
+}
+```
+
+**Respuesta:**
+
+```json
+{
+  "message": "Codigo valido.",
+  "resetToken": "jwt_temporal_10m"
+}
+```
+
+---
+
+#### POST /reset-password
+
+Restablecer contraseña sin sesión activa usando token temporal de recuperación.
+
+**Body:**
+
+```json
+{
+  "token": "jwt_temporal_10m",
+  "newPassword": "string"
+}
+```
+
+**Respuesta:**
+
+```json
+{
+  "message": "Contrasena actualizada con exito."
 }
 ```
 
