@@ -21,14 +21,14 @@ RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
 
 # Install node modules
-COPY yarn.lock package.json ./
-RUN yarn install --frozen-lockfile --production
+COPY package.json package-lock.json ./
+RUN npm ci --production
 
 # Copy application code
 COPY . .
 
 # Build application
-RUN yarn build
+RUN npm run build
 
 
 # Final stage for app image
@@ -39,4 +39,4 @@ COPY --from=build /app /app
 
 # Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
-CMD [ "yarn", "start" ]
+CMD [ "npm", "start" ]
