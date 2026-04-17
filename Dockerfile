@@ -20,9 +20,9 @@ FROM base AS build
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
 
-# Install node modules
+# Install all dependencies (including dev for TypeScript)
 COPY package.json package-lock.json ./
-RUN npm ci --production
+RUN npm ci
 
 # Copy application code
 COPY . .
