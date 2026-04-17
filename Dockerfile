@@ -16,13 +16,16 @@ ENV NODE_ENV="production"
 # Throw-away build stage to reduce size of final image
 FROM base AS build
 
+# Build needs devDependencies (typescript, ts-node-dev, etc.)
+ENV NODE_ENV="development"
+
 # Install packages needed to build node modules
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
 
 # Install all dependencies (including dev for TypeScript)
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci
 
 # Copy application code
 COPY . .
@@ -34,8 +37,11 @@ RUN npm run build
 # Final stage for app image
 FROM base
 
-# Copy built application
-COPY --from=build /app /app
+# Copy only what runtime needs
+COPY --from=build /app/package.json /app/package-lock.json /app/
+COPY --from=build /app/node_modules /app/node_modules
+RUN npm prune --omit=dev
+COPY --from=build /app/dist /app/dist
 
 # Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
