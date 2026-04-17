@@ -22,7 +22,7 @@ RUN apt-get update -qq && \
 
 # Install all dependencies (including dev for TypeScript)
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 
 # Copy application code
 COPY . .
