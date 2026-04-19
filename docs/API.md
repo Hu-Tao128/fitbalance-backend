@@ -79,11 +79,47 @@ Enviar código de recuperación de contraseña al correo.
 }
 ```
 
-**Respuesta:**
+**Respuesta exitosa (`200 OK`):**
 
 ```json
 {
-  "message": "Codigo de recuperacion enviado al correo del paciente."
+  "message": "Codigo de recuperacion enviado al correo del paciente.",
+  "userExists": true
+}
+```
+
+**Posibles errores:**
+
+- `400 Bad Request`
+
+```json
+{
+  "message": "El campo email es obligatorio."
+}
+```
+
+- `429 Too Many Requests`
+
+```json
+{
+  "message": "Espera antes de solicitar otro codigo."
+}
+```
+
+- `404 Not Found`
+
+```json
+{
+  "message": "Usuario no encontrado.",
+  "userExists": false
+}
+```
+
+- `500 Internal Server Error`
+
+```json
+{
+  "error": "Error al enviar el correo de recuperacion."
 }
 ```
 
@@ -102,12 +138,50 @@ Verificar si el código de recuperación es válido.
 }
 ```
 
-**Respuesta:**
+**Respuesta exitosa (`200 OK`):**
 
 ```json
 {
   "message": "Codigo valido.",
   "resetToken": "jwt_temporal_10m"
+}
+```
+
+**Posibles errores:**
+
+- `400 Bad Request`
+
+```json
+{
+  "message": "Los campos email y code son obligatorios."
+}
+```
+
+```json
+{
+  "message": "Codigo invalido."
+}
+```
+
+```json
+{
+  "message": "Codigo expirado."
+}
+```
+
+- `404 Not Found`
+
+```json
+{
+  "message": "Usuario no encontrado."
+}
+```
+
+- `500 Internal Server Error`
+
+```json
+{
+  "error": "Error interno del servidor."
 }
 ```
 
@@ -126,11 +200,57 @@ Restablecer contraseña sin sesión activa usando token temporal de recuperació
 }
 ```
 
-**Respuesta:**
+**Respuesta exitosa (`200 OK`):**
 
 ```json
 {
   "message": "Contrasena actualizada con exito."
+}
+```
+
+**Posibles errores:**
+
+- `400 Bad Request`
+
+```json
+{
+  "message": "Los campos token y newPassword son obligatorios."
+}
+```
+
+```json
+{
+  "message": "La contrasena debe tener al menos 6 caracteres."
+}
+```
+
+- `401 Unauthorized`
+
+```json
+{
+  "message": "Token de recuperacion invalido."
+}
+```
+
+```json
+{
+  "message": "Token de recuperacion expirado."
+}
+```
+
+- `404 Not Found`
+
+```json
+{
+  "message": "Usuario no encontrado."
+}
+```
+
+- `500 Internal Server Error`
+
+```json
+{
+  "error": "Error interno del servidor."
 }
 ```
 

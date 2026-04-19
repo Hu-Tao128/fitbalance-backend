@@ -1,13 +1,20 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'crypto';
-import { Patient } from '../models';
+import { PasswordResetToken, Patient } from '../models';
 import { sendEmail } from '../services/emailService';
 import { SALT_ROUNDS } from '../config/env';
 import { generateToken, verifyToken } from '../utils/jwt';
 
 const RESET_CODE_TTL_MS = 10 * 60 * 1000;
 const RESET_REQUEST_INTERVAL_MS = 60 * 1000;
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return email;
+  if (local.length <= 2) return `**@${domain}`;
+  return `${local.slice(0, 2)}***@${domain}`;
+}
 
 function validatePassword(newPassword: string): string | null {
   if (newPassword.length < 6) {
@@ -72,35 +79,42 @@ export async function sendResetCode(req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const patient = await Patient.findOne({ email }).select(
-      '+resetCode +resetCodeExpires +lastResetRequest'
-    );
+    console.info(`[auth] send-reset-code solicitado para ${maskEmail(email)}`);
+    const patient = await Patient.findOne({ email });
 
     if (!patient) {
-      res.json({ message: 'Codigo de recuperacion enviado al correo del paciente.' });
+      console.info(`[auth] send-reset-code usuario no encontrado para ${maskEmail(email)}`);
+      res.status(404).json({
+        message: 'Usuario no encontrado.',
+        userExists: false,
+      });
       return;
     }
 
+    const existingReset = await PasswordResetToken.findOne({ patient_id: patient._id });
+
     if (
-      patient.lastResetRequest &&
-      Date.now() - new Date(patient.lastResetRequest).getTime() < RESET_REQUEST_INTERVAL_MS
+      existingReset?.lastRequestAt &&
+      Date.now() - new Date(existingReset.lastRequestAt).getTime() < RESET_REQUEST_INTERVAL_MS
     ) {
+      console.info(`[auth] send-reset-code rate-limited para ${maskEmail(email)}`);
       res.status(429).json({ message: 'Espera antes de solicitar otro codigo.' });
       return;
     }
 
-    // Invalidar explicitamente cualquier codigo previo antes de emitir uno nuevo.
-    patient.resetCode = null;
-    patient.resetCodeExpires = null;
-    await patient.save();
-
+    // Generar nuevo código
     const code = randomInt(0, 1000000).toString().padStart(6, '0');
     const hashedCode = await bcrypt.hash(code, SALT_ROUNDS);
 
-    patient.resetCode = hashedCode;
-    patient.resetCodeExpires = new Date(Date.now() + RESET_CODE_TTL_MS);
-    patient.lastResetRequest = new Date();
-    await patient.save();
+    await PasswordResetToken.findOneAndUpdate(
+      { patient_id: patient._id },
+      {
+        token: hashedCode,
+        expiresAt: new Date(Date.now() + RESET_CODE_TTL_MS),
+        lastRequestAt: new Date(),
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
 
     await sendEmail({
       to: email,
@@ -111,7 +125,11 @@ export async function sendResetCode(req: Request, res: Response): Promise<void> 
       },
     });
 
-    res.json({ message: 'Codigo de recuperacion enviado al correo del paciente.' });
+    console.info(`[auth] send-reset-code enviado para ${maskEmail(email)}`);
+    res.status(200).json({
+      message: 'Codigo de recuperacion enviado al correo del paciente.',
+      userExists: true,
+    });
   } catch (error) {
     console.error('Error al enviar el codigo de recuperacion:', error);
     res.status(500).json({ error: 'Error al enviar el correo de recuperacion.' });
@@ -127,32 +145,33 @@ export async function verifyResetCode(req: Request, res: Response): Promise<void
   }
 
   try {
-    const patient = await Patient.findOne({ email }).select('+resetCode +resetCodeExpires');
+    const patient = await Patient.findOne({ email });
 
     if (!patient) {
       res.status(404).json({ message: 'Usuario no encontrado.' });
       return;
     }
 
-    if (!patient.resetCode) {
+    const resetTokenDoc = await PasswordResetToken.findOne({ patient_id: patient._id });
+
+    if (!resetTokenDoc) {
       res.status(400).json({ message: 'Codigo invalido.' });
       return;
     }
 
-    const isValidCode = await bcrypt.compare(code, patient.resetCode);
+    const isValidCode = await bcrypt.compare(code, resetTokenDoc.token);
     if (!isValidCode) {
       res.status(400).json({ message: 'Codigo invalido.' });
       return;
     }
 
-    if (!patient.resetCodeExpires || patient.resetCodeExpires < new Date()) {
+    if (!resetTokenDoc.expiresAt || resetTokenDoc.expiresAt < new Date()) {
+      await PasswordResetToken.deleteOne({ _id: resetTokenDoc._id });
       res.status(400).json({ message: 'Codigo expirado.' });
       return;
     }
 
-    patient.resetCode = null;
-    patient.resetCodeExpires = null;
-    await patient.save();
+    await PasswordResetToken.deleteOne({ _id: resetTokenDoc._id });
 
     const resetToken = generateToken(
       {
@@ -199,8 +218,13 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
     }
 
     const salt = await bcrypt.genSalt(SALT_ROUNDS);
-    patient.password = await bcrypt.hash(newPassword, salt);
-    await patient.save();
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await Patient.collection.updateOne(
+      { _id: patient._id },
+      { $set: { password: hashedPassword } },
+      { bypassDocumentValidation: true }
+    );
 
     res.json({ message: 'Contrasena actualizada con exito.' });
   } catch (error) {
@@ -248,8 +272,13 @@ export async function changePassword(req: Request, res: Response): Promise<void>
     }
 
     const salt = await bcrypt.genSalt(SALT_ROUNDS);
-    patient.password = await bcrypt.hash(newPassword, salt);
-    await patient.save();
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await Patient.collection.updateOne(
+      { _id: patient._id },
+      { $set: { password: hashedPassword } },
+      { bypassDocumentValidation: true }
+    );
 
     res.json({ message: 'Contrasena actualizada con exito.' });
   } catch (error) {

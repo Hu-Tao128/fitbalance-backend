@@ -63,5 +63,7 @@ export async function sendEmail(payload: EmailPayload): Promise<void> {
     html,
   };
 
-  await transporter.sendMail(mailOptions);
+  console.info(`[email] Enviando correo type=${type} to=${to}`);
+  const info = await transporter.sendMail(mailOptions);
+  console.info(`[email] Correo enviado type=${type} to=${to} messageId=${info.messageId}`);
 }
