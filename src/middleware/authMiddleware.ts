@@ -1,11 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
 
+interface AuthRequest extends Request {
+  user?: { id: string; email: string } | { [key: string]: any };
+}
+
 /**
  * Middleware to verify JWT token
  * Expects token in Authorization header as Bearer token
  */
-export function authenticateToken(req: Request, res: Response, next: NextFunction): void {
+export function authenticateToken(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
