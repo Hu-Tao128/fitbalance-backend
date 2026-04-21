@@ -9,5 +9,7 @@ router.use(authenticateToken);
 
 router.get('/user/:username', patientController.getUserByUsername);
 router.put('/patient/:id', patientController.updatePatient);
+router.post('/fcm-token', patientController.saveFcmToken);
+router.put('/notification-preferences', patientController.updateNotificationPreferences);
 
 export default router;

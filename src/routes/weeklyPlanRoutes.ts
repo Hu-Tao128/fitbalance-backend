@@ -4,7 +4,6 @@ import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Apply authentication middleware to all routes in this router
 router.use(authenticateToken);
 
 router.get('/weeklyplan/latest/:patient_id', weeklyPlanController.getLatestWeeklyPlan);

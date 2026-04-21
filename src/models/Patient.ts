@@ -21,6 +21,12 @@ export interface IPatient extends Document {
   resetCode?: string | null;
   resetCodeExpires?: Date | null;
   lastResetRequest?: Date | null;
+  fcmTokens?: string[];
+  notificationPreferences?: {
+    planUpdates: boolean;
+    appointments: boolean;
+    reminders: boolean;
+  };
 }
 
 const PatientSchema = new Schema<IPatient>(
@@ -45,7 +51,13 @@ const PatientSchema = new Schema<IPatient>(
     resetCode: { type: String, default: null, select: false },
     resetCodeExpires: { type: Date, default: null, select: false },
     lastResetRequest: { type: Date, default: null, select: false },
+  fcmTokens: { type: [String], default: [] },
+  notificationPreferences: {
+    planUpdates: { type: Boolean, default: true },
+    appointments: { type: Boolean, default: true },
+    reminders: { type: Boolean, default: true },
   },
+},
   { collection: 'Patients' }
 );
 

@@ -49,3 +49,62 @@ export async function updatePatient(req: Request, res: Response): Promise<void> 
     res.status(500).json({ error: 'Error interno del servidor al actualizar el perfil' });
   }
 }
+
+export async function saveFcmToken(req: Request, res: Response): Promise<void> {
+  const userId = (req as any).user?.id;
+
+  if (!userId) {
+    res.status(401).json({ error: 'No autorizado' });
+    return;
+  }
+
+  const { token } = req.body;
+
+  if (!token) {
+    res.status(400).json({ error: 'Token requerido' });
+    return;
+  }
+
+  try {
+    await Patient.findByIdAndUpdate(userId, {
+      $addToSet: { fcmTokens: token },
+    });
+
+    res.json({ message: 'Token guardado correctamente' });
+  } catch (error) {
+    console.error('Error guardando FCM token:', error);
+    res.status(500).json({ error: 'Error al guardar token' });
+  }
+}
+
+export async function updateNotificationPreferences(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const userId = (req as any).user?.id;
+  const { planUpdates, appointments, reminders } = req.body;
+
+  if (!userId) {
+    res.status(401).json({ error: 'No autorizado' });
+    return;
+  }
+
+  try {
+    const updateData: Record<string, boolean> = {};
+    if (typeof planUpdates === 'boolean') updateData['notificationPreferences.planUpdates'] = planUpdates;
+    if (typeof appointments === 'boolean') updateData['notificationPreferences.appointments'] = appointments;
+    if (typeof reminders === 'boolean') updateData['notificationPreferences.reminders'] = reminders;
+
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ error: 'Sin preferencias válidas para actualizar' });
+      return;
+    }
+
+    await Patient.findByIdAndUpdate(userId, { $set: updateData });
+
+    res.json({ message: 'Preferencias actualizadas' });
+  } catch (error) {
+    console.error('Error actualizando preferencias:', error);
+    res.status(500).json({ error: 'Error al actualizar preferencias' });
+  }
+}

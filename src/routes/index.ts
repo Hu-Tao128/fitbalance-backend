@@ -7,6 +7,7 @@ import dailyMealLogRoutes from './dailyMealLogRoutes';
 import patientMealRoutes from './patientMealRoutes';
 import appointmentRoutes from './appointmentRoutes';
 import nutritionistRoutes from './nutritionistRoutes';
+import notificationRoutes from './notificationRoutes';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use(dailyMealLogRoutes);
 router.use(patientMealRoutes);
 router.use(appointmentRoutes);
 router.use(nutritionistRoutes);
+router.use(notificationRoutes);
 
 export default router;
