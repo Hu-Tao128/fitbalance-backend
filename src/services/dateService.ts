@@ -18,6 +18,20 @@ export function getTodayWeekday(): string {
   return nowInTijuana().weekdayLong!.toLowerCase();
 }
 
+const DAY_TRANSLATIONS: Record<string, string> = {
+  lunes: 'monday',
+  martes: 'tuesday',
+  miércoles: 'wednesday',
+  jueves: 'thursday',
+  viernes: 'friday',
+  sábado: 'saturday',
+  domingo: 'sunday',
+};
+
+export function translateDayToEnglish(day: string): string {
+  return DAY_TRANSLATIONS[day.toLowerCase()] || day;
+}
+
 export function parseISODateInTijuana(dateString: string): { startOfDay: Date; endOfDay: Date } {
   const dt = DateTime.fromISO(dateString, { zone: TIMEZONE });
   return {

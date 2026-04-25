@@ -8,6 +8,7 @@ import {
   nowInTijuana,
   parseISODateInTijuana,
   formatDateToISO,
+  translateDayToEnglish,
 } from '../services/dateService';
 
 export async function getDailyNutrition(req: Request, res: Response): Promise<void> {
@@ -256,7 +257,7 @@ export async function addMeal(req: Request, res: Response): Promise<void> {
     }));
 
     log.meals.push({
-      day: nowInTijuana().weekdayLong!.toLowerCase(),
+      day: translateDayToEnglish(nowInTijuana().weekdayLong!.toLowerCase()),
       type: meal.type,
       time: meal.time,
       foods,
@@ -375,7 +376,7 @@ export async function addCustomMeal(req: Request, res: Response): Promise<void> 
     }
 
     dailyLog.meals.push({
-      day: nowInTijuana().weekdayLong!.toLowerCase(),
+      day: translateDayToEnglish(nowInTijuana().weekdayLong!.toLowerCase()),
       type,
       time,
       foods: patientMeal.ingredients.map((ing: any) => ({
@@ -484,7 +485,7 @@ export async function addFoodFromScanner(req: Request, res: Response): Promise<v
       });
     }
 
-    const weekday = nowInTijuana().weekdayLong!.toLowerCase();
+    const weekday = translateDayToEnglish(nowInTijuana().weekdayLong!.toLowerCase());
 
     dailyLog.meals.push({
       day: weekday,
